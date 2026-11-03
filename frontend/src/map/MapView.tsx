@@ -3,11 +3,15 @@ import * as maplibregl from 'maplibre-gl'
 import type { Map as MapInstance } from 'maplibre-gl'
 import mlcontour from 'maplibre-contour'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
-maplibregl.setWorkerUrl(workerUrl)
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { analysisGrid, region, sources, type MapSettings } from './config'
 
-import { boundary, emptyGrid, visibleGrid } from './grid'
+import { boundary, emptyGrid, gridExtent, gridMinZoom, toLngLat, visibleGrid } from './grid'
+import { distanceBands, type DistanceRun } from './distance'
+import type { Timeline } from './timeline'
+import type { MapStatusEvent } from './status'
+
+maplibregl.setWorkerUrl(workerUrl)
 
 function updateGrid(map: MapInstance, settings: MapSettings) {
   const source = map.getSource<maplibregl.GeoJSONSource>('analysis-grid')
@@ -36,11 +40,69 @@ function apply(map: MapInstance, settings: MapSettings) {
   map.setPaintProperty('contours', 'line-opacity', settings.opacity / 100)
   map.setPaintProperty('contours', 'line-color', settings.base === 'satellite' ? '#f0e7ba' : '#6c674e')
 }
-export function MapView({ settings, onReady, onStatus, onZoom }: { settings: MapSettings; onReady: (map: MapInstance | null) => void; onStatus: (s: string) => void; onZoom: (z: number) => void }) {
+const [west, south, east, north] = gridExtent(analysisGrid)
+const rasterCorners: [[number, number], [number, number], [number, number], [number, number]] = [
+  toLngLat(analysisGrid, [west, north]), toLngLat(analysisGrid, [east, north]),
+  toLngLat(analysisGrid, [east, south]), toLngLat(analysisGrid, [west, south]),
+]
+
+function showHeatmap(map: MapInstance, run: DistanceRun | null, timeline: Timeline | null, step: number) {
+  if (!map.getLayer('analysis-grid-lines')) return
+  if (map.getSource('distance-raster')) {
+    map.removeLayer('distance-raster')
+    map.removeSource('distance-raster')
+    map.removeLayer('distance-start')
+    map.removeSource('distance-start')
+  }
+  if (!run && !timeline) return
+
+  const canvas = document.createElement('canvas')
+  canvas.width = analysisGrid.columns
+  canvas.height = analysisGrid.rows
+  const context = canvas.getContext('2d')
+  if (!context) return
+  const image = context.createImageData(canvas.width, canvas.height)
+  if (timeline) {
+    for (const [index, mass] of timeline.frames[step].cells) {
+      const intensity = Math.sqrt(mass / timeline.maxMass)
+      image.data.set([138 + 117 * intensity, 84 + 137 * intensity, 208 - 61 * intensity, 80 + 130 * intensity], index * 4)
+    }
+  } else if (run) {
+    let first = 0
+    for (const band of distanceBands) {
+      const end = Math.ceil(band.end * run.order.length)
+      for (let rank = first; rank < end; rank++) {
+        image.data.set(band.color, run.order[rank] * 4)
+      }
+      first = end
+    }
+  }
+  context.putImageData(image, 0, 0)
+  map.addSource('distance-raster', { type: 'canvas', canvas, coordinates: rasterCorners, animate: false })
+  map.addLayer({ id: 'distance-raster', type: 'raster', source: 'distance-raster',
+    paint: { 'raster-resampling': 'nearest', 'raster-fade-duration': 0 } }, 'contours')
+  map.addSource('distance-start', { type: 'geojson', data: {
+    type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: (timeline ?? run)?.start ?? [] },
+  } })
+  map.addLayer({ id: 'distance-start', type: 'circle', source: 'distance-start',
+    paint: { 'circle-radius': 5, 'circle-color': '#202a31', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } })
+}
+
+export function MapView({ settings, onReady, onStatus, onZoom, distanceRun, timeline, timelineStep, picking, onPick }: {
+  settings: MapSettings
+  onReady: (map: MapInstance | null) => void
+  onStatus: (event: MapStatusEvent) => void
+  onZoom: (z: number) => void
+  distanceRun: DistanceRun | null
+  timeline: Timeline | null
+  timelineStep: number
+  picking: boolean
+  onPick: (start: [number, number]) => void
+}) {
   const container = useRef<HTMLDivElement>(null)
+  const coordinates = useRef<HTMLOutputElement>(null)
   const mapRef = useRef<MapInstance | null>(null)
   const latest = useRef(settings)
-  latest.current = settings
   useEffect(() => {
     if (!container.current) return
     let map: MapInstance
@@ -60,34 +122,74 @@ export function MapView({ settings, onReady, onStatus, onZoom }: { settings: Map
           { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: 'none' } },
           { id: 'hillshade', type: 'hillshade', source: 'dem', paint: { 'hillshade-exaggeration': .32, 'hillshade-shadow-color': '#465549', 'hillshade-highlight-color': '#fff9e4' } },
           { id: 'contours', type: 'line', source: 'contours', 'source-layer': 'contours', paint: { 'line-color': '#6c674e', 'line-opacity': .65, 'line-width': ['match', ['get', 'level'], 1, 1.1, .45] } },
-          { id: 'analysis-grid-lines', type: 'line', source: 'analysis-grid', minzoom: 16, layout: { visibility: 'none' }, paint: { 'line-color': '#18a5a0', 'line-opacity': .6, 'line-width': .7 } },
+          { id: 'analysis-grid-lines', type: 'line', source: 'analysis-grid', minzoom: gridMinZoom, layout: { visibility: 'none' }, paint: { 'line-color': '#18a5a0', 'line-opacity': .6, 'line-width': .7 } },
           { id: 'analysis-boundary', type: 'line', source: 'analysis-area', paint: { 'line-color': '#087e80', 'line-width': 2, 'line-dasharray': [5, 3] } },
         ] },
       })
     } catch {
-      onStatus('지도를 시작하지 못했습니다. WebGL 지원과 브라우저 설정을 확인해 주세요.')
+      onStatus('startup-error')
       return
     }
     mapRef.current = map
     onReady(map)
     map.addControl(new maplibregl.ScaleControl({ maxWidth: 130, unit: 'metric' }), 'bottom-right')
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
-    const errors = new Set<string>()
-    map.on('load', () => { apply(map, latest.current); onStatus('지도 연결됨') })
-    map.on('error', (event) => {
-      errors.add(('sourceId' in event && typeof event.sourceId === 'string') ? event.sourceId : 'map')
-      onStatus('일부 지도 자료를 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.')
-    })
-    map.on('sourcedata', (event) => {
-      if (event.isSourceLoaded && event.sourceId) errors.delete(event.sourceId)
-    })
-    map.on('idle', () => { if (!errors.size) onStatus('지도 연결됨') })
+    const onError = () => onStatus('error')
+    const onIdle = () => onStatus('idle')
+    map.on('error', onError)
+    map.once('style.load', () => apply(map, latest.current))
+    map.once('idle', onIdle)
+    const coordinateOutput = coordinates.current
+    if (coordinateOutput) {
+      map.on('mousemove', ({ lngLat }) => {
+        const { lng, lat } = lngLat.wrap()
+        coordinateOutput.textContent = `위도 ${lat.toFixed(5)} · 경도 ${lng.toFixed(5)}`
+        coordinateOutput.hidden = false
+      })
+      map.on('mouseout', () => { coordinateOutput.hidden = true })
+    }
     map.on('zoom', () => onZoom(map.getZoom()))
     map.on('moveend', () => updateGrid(map, latest.current))
     const observer = new ResizeObserver(() => map.resize())
     observer.observe(container.current)
-    return () => { observer.disconnect(); onReady(null); mapRef.current = null; map.remove() }
+    return () => {
+      observer.disconnect()
+      map.off('error', onError)
+      map.off('idle', onIdle)
+      onReady(null)
+      mapRef.current = null
+      map.remove()
+    }
   }, [onReady, onStatus, onZoom])
-  useEffect(() => { if (mapRef.current?.getLayer('base')) apply(mapRef.current, settings) }, [settings])
-  return <div ref={container} className="map-canvas" aria-label="요세미티 지도" />
+  useEffect(() => {
+    latest.current = settings
+    if (mapRef.current) apply(mapRef.current, settings)
+  }, [settings])
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const update = () => showHeatmap(map, distanceRun, timeline, timelineStep)
+    map.on('style.load', update)
+    update()
+    return () => { map.off('style.load', update) }
+  }, [distanceRun, timeline, timelineStep])
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !picking) return
+    const canvas = map.getCanvas()
+    const select = (event: maplibregl.MapMouseEvent) => {
+      const { lng, lat } = event.lngLat.wrap()
+      onPick([lng, lat])
+    }
+    canvas.style.cursor = 'crosshair'
+    map.on('click', select)
+    return () => {
+      canvas.style.cursor = ''
+      map.off('click', select)
+    }
+  }, [picking, onPick])
+  return <>
+    <div ref={container} className="map-canvas" aria-label={`${region.shortName} 지도`} />
+    <output ref={coordinates} className="cursor-coordinates" aria-live="off" hidden />
+  </>
 }

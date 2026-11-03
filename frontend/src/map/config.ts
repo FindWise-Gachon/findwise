@@ -1,6 +1,11 @@
 import { validateGrid } from './grid'
 export const region = {
-  id: 'yosemite-valley', name: '요세미티 국립공원', subtitle: 'Yosemite Valley · California',
+  id: 'yosemite-valley',
+  name: '요세미티 국립공원',
+  shortName: '요세미티',
+  placeName: 'Yosemite Valley',
+  location: '미국 · 캘리포니아',
+  placeContext: 'California',
   center: [-119.59, 37.745] as [number, number], zoom: 12,
 }
 export const sources = {

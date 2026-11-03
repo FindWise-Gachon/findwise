@@ -4,3 +4,52 @@
 @media(max-width:1000px){.map-area:has(+.detail-panel) .place-label{display:none}.map-area:has(+.detail-panel) .map-toolbar{flex-wrap:wrap;gap:10px}.map-area:has(+.detail-panel) .layer-control{margin-left:auto}}
 
 .layer-menu{max-height:calc(100dvh - 155px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#57666f transparent}.grid-action{display:flex;align-items:center;justify-content:space-between;width:100%;background:#31464b;border:1px solid #4b706f;padding:9px 10px;margin-top:10px;border-radius:4px;font-size:10px;color:#a7e9e0}.area-sample{width:25px;border-top:2px dashed #6ae0d2}.grid-sample{width:25px;height:12px;background:repeating-linear-gradient(0deg,transparent 0 5px,#46c4ba 5px 6px),repeating-linear-gradient(90deg,transparent 0 5px,#46c4ba 5px 6px)}.secondary-action{background:transparent;border:1px solid #4b636b;border-radius:5px;padding:11px;color:#becfd5;margin-top:10px;font-size:11px}
+
+.status-dot.warning-dot{background:#efb66b}
+.connection i.loading-dot,.status-dot.loading-dot{background:#adbcc4}
+
+.distance-form{display:grid;gap:12px}
+.distance-form label{display:grid;grid-template-columns:36px 1fr;align-items:center;gap:8px;font-size:12px}
+.distance-form input{width:100%;min-width:0;background:#1d272f;color:#e2eaec;border:1px solid #53676e;border-radius:4px;padding:8px}
+.distance-form .outline-action,.distance-form .secondary-action{margin:0}
+.distance-legend{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+.distance-legend b{grid-column:1/-1}
+.distance-legend span{display:flex;align-items:center;gap:5px}
+.distance-legend i{width:10px;height:10px;border-radius:2px}
+.distance-prompt{position:absolute;top:145px;left:25px;max-width:calc(100% - 50px);z-index:4;display:flex;align-items:center;gap:12px;background:#26343c;color:#e2eaec;padding:9px;border:1px solid #53676e;border-radius:5px;font-size:12px}
+.distance-prompt button{padding:5px 8px;background:#41535c;border-radius:4px;white-space:nowrap}
+
+.cursor-coordinates{position:absolute;bottom:15px;left:50%;transform:translateX(-50%);padding:5px 8px;border-radius:4px;background:#253139ef;color:#e0e8e8;font-size:10px;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none}
+@media(max-width:760px){.cursor-coordinates{bottom:36px;left:13px;transform:none}}
+
+.layer-menu,.legend-content{
+  transition:opacity 140ms ease-out,translate 140ms ease-out,display 140ms allow-discrete;
+}
+.layer-menu[hidden],.legend-content[hidden]{display:none;opacity:0;translate:0 -4px;pointer-events:none}
+@starting-style{
+  .layer-menu:not([hidden]),.legend-content:not([hidden]){opacity:0;translate:0 -4px}
+}
+.workspace button{
+  transition:background-color 120ms ease-out,border-color 120ms ease-out,color 120ms ease-out,box-shadow 120ms ease-out;
+}
+.workspace button:focus-visible{outline:2px solid #9cf1e5;outline-offset:2px}
+.workspace :is(.base-switch button:not(.selected),.layer-trigger,.legend-title,.map-tools button,.region-button):hover{background-color:#394b55}
+.workspace :is(.base-switch button:not(.selected),.layer-trigger,.legend-title,.map-tools button,.region-button):active{box-shadow:inset 0 0 0 1px #91c2c9}
+.checkbox{transition:background-color 120ms ease-out,border-color 120ms ease-out,color 120ms ease-out}
+.layer-row:hover .checkbox{border-color:#9cbbca}
+@media(prefers-reduced-motion:reduce){
+  .layer-menu,.legend-content,.workspace button,.checkbox{transition:none}
+}
+
+.timeline-panel{display:grid;gap:8px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #48575e}
+.timeline-panel label,.timeline-panel p{font-size:11px;line-height:1.7;color:#c6d6dc;overflow-wrap:anywhere}
+.timeline-panel input{display:block;width:100%;margin-top:4px}
+.timeline-panel .secondary-action{margin-top:0}
+.time-slider{position:absolute;z-index:3;bottom:54px;left:50%;transform:translateX(-50%);width:min(350px,calc(100% - 26px));padding:9px 12px;background:#253139f2;color:#e0e8e8;border:1px solid #56656b;border-radius:6px;font-size:11px}
+.time-slider div{display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap}
+.time-slider input{display:block;width:100%;margin:6px 0;accent-color:#85e5d9}
+.time-slider small{display:block;overflow-wrap:anywhere}
+.time-scale{display:grid;gap:4px}
+.time-scale i{height:6px;border-radius:2px;background:linear-gradient(to right,#8a54d0,#ffdd93)}
+@media(max-width:1000px){.map-area:has(.time-slider) .legend{bottom:150px}}
+@media(max-width:760px){.time-slider{bottom:57px}.map-area:has(+.detail-panel) .time-slider{visibility:hidden}}
