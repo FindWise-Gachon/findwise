@@ -13,6 +13,14 @@ test('fixed area has one million 36 square metre cells', () => {
   assert.deepEqual(gridManifest(grid).geo_transform, [268800,6,0,4183680,0,-6])
   assert.equal(gridManifest(grid).probabilities, null)
 })
+test('grid metadata follows a different cell size and rectangular extent', () => {
+  const custom = { ...grid, cellSizeM: 10, rows: 30, columns: 50 }
+  const manifest = gridManifest(custom)
+  assert.equal(manifest.cell_size_m, 10)
+  assert.equal(manifest.cell_count, 1500)
+  assert.deepEqual(manifest.projected_extent, [268800, 4183380, 269300, 4183680])
+})
+
 test('north-west origin and row-major indexing; outer boundaries are not clamped', () => {
   const [w,s,e,n] = gridExtent(grid)
   assert.deepEqual(projectedToCell(grid,w,n), {row:0,column:0,index:0})

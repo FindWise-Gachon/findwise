@@ -151,7 +151,11 @@ activemq-data/
 
 # Environments
 .env
+.env.*
+*.env
+!.env.example
 .envrc
+.envrc.*
 .venv
 env/
 venv/
@@ -218,3 +222,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local data. Keep the directory placeholders and track public samples/catalog entries.
+/data/raw/*
+!/data/raw/.gitkeep
+/data/processed/*
+!/data/processed/.gitkeep
+/data/cache/*
+!/data/cache/.gitkeep
+/data/evaluation/*
+!/data/evaluation/.gitkeep

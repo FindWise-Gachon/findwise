@@ -43,10 +43,11 @@ export function boundary(g: GridSpec): Feature<Polygon> {
   ring.push(ring[0])
   return { type: 'Feature', properties: { grid_id: g.id }, geometry: { type: 'Polygon', coordinates: [ring] } }
 }
+export const gridMinZoom = 16
 export const emptyGrid: FeatureCollection<LineString> = { type: 'FeatureCollection', features: [] }
 // Render only the visible part. Do not allocate one feature or probability per cell.
 export function visibleGrid(g: GridSpec, geographicBounds: [number, number, number, number], zoom: number): FeatureCollection<LineString> {
-  if (zoom < 16 || !geographicBounds.every(Number.isFinite)) return emptyGrid
+  if (zoom < gridMinZoom || !geographicBounds.every(Number.isFinite)) return emptyGrid
   const [west, south, east, north] = geographicBounds
   const samples: [number, number][] = [[west, north], [east, north], [east, south], [west, south], [(west + east) / 2, north], [(west + east) / 2, south], [west, (south + north) / 2], [east, (south + north) / 2]]
   const points = samples.map(p => toProjected(g, p))
