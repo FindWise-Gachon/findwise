@@ -5,7 +5,16 @@ import mlcontour from 'maplibre-contour'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 maplibregl.setWorkerUrl(workerUrl)
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { region, sources, type MapSettings } from './config'
+import { analysisGrid, region, sources, type MapSettings } from './config'
+
+import { boundary, emptyGrid, visibleGrid } from './grid'
+
+function updateGrid(map: MapInstance, settings: MapSettings) {
+  const source = map.getSource<maplibregl.GeoJSONSource>('analysis-grid')
+  if (!source) return
+  const b = map.getBounds()
+  source.setData(settings.grid ? visibleGrid(analysisGrid, [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], map.getZoom()) : emptyGrid)
+}
 
 let dem: InstanceType<typeof mlcontour.DemSource> | undefined
 function elevation() {
@@ -21,6 +30,9 @@ function apply(map: MapInstance, settings: MapSettings) {
   map.setLayoutProperty('satellite', 'visibility', settings.base === 'satellite' ? 'visible' : 'none')
   map.setLayoutProperty('contours', 'visibility', settings.contours ? 'visible' : 'none')
   map.setLayoutProperty('hillshade', 'visibility', settings.hillshade ? 'visible' : 'none')
+  map.setLayoutProperty('analysis-boundary', 'visibility', settings.area ? 'visible' : 'none')
+  map.setLayoutProperty('analysis-grid-lines', 'visibility', settings.grid ? 'visible' : 'none')
+  updateGrid(map, settings)
   map.setPaintProperty('contours', 'line-opacity', settings.opacity / 100)
   map.setPaintProperty('contours', 'line-color', settings.base === 'satellite' ? '#f0e7ba' : '#6c674e')
 }
@@ -36,6 +48,8 @@ export function MapView({ settings, onReady, onStatus, onZoom }: { settings: Map
       const terrain = elevation()
       map = new maplibregl.Map({ container: container.current, center: region.center, zoom: region.zoom, minZoom: 9, maxZoom: 17, attributionControl: false,
         style: { version: 8, sources: {
+          'analysis-area': { type: 'geojson', data: boundary(analysisGrid) },
+          'analysis-grid': { type: 'geojson', data: emptyGrid },
           base: { type: 'raster', tiles: [sources.base.url], tileSize: 256, maxzoom: 19, attribution: sources.base.attribution },
           satellite: { type: 'raster', tiles: [sources.satellite.url], tileSize: 256, maxzoom: 19, attribution: sources.satellite.attribution },
           dem: { type: 'raster-dem', tiles: [terrain.sharedDemProtocolUrl], encoding: 'terrarium', tileSize: 256, maxzoom: 13, attribution: sources.elevation.attribution },
@@ -46,6 +60,8 @@ export function MapView({ settings, onReady, onStatus, onZoom }: { settings: Map
           { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: 'none' } },
           { id: 'hillshade', type: 'hillshade', source: 'dem', paint: { 'hillshade-exaggeration': .32, 'hillshade-shadow-color': '#465549', 'hillshade-highlight-color': '#fff9e4' } },
           { id: 'contours', type: 'line', source: 'contours', 'source-layer': 'contours', paint: { 'line-color': '#6c674e', 'line-opacity': .65, 'line-width': ['match', ['get', 'level'], 1, 1.1, .45] } },
+          { id: 'analysis-grid-lines', type: 'line', source: 'analysis-grid', minzoom: 16, layout: { visibility: 'none' }, paint: { 'line-color': '#18a5a0', 'line-opacity': .6, 'line-width': .7 } },
+          { id: 'analysis-boundary', type: 'line', source: 'analysis-area', paint: { 'line-color': '#087e80', 'line-width': 2, 'line-dasharray': [5, 3] } },
         ] },
       })
     } catch {
@@ -67,6 +83,7 @@ export function MapView({ settings, onReady, onStatus, onZoom }: { settings: Map
     })
     map.on('idle', () => { if (!errors.size) onStatus('지도 연결됨') })
     map.on('zoom', () => onZoom(map.getZoom()))
+    map.on('moveend', () => updateGrid(map, latest.current))
     const observer = new ResizeObserver(() => map.resize())
     observer.observe(container.current)
     return () => { observer.disconnect(); onReady(null); mapRef.current = null; map.remove() }

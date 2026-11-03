@@ -2,3 +2,5 @@
 
 .satellite-mode .place-label{color:#f1f8f4;text-shadow:0 2px 8px #081611,0 0 18px #081611}.satellite-mode .place-label p{color:#e0eee6}
 @media(max-width:1000px){.map-area:has(+.detail-panel) .place-label{display:none}.map-area:has(+.detail-panel) .map-toolbar{flex-wrap:wrap;gap:10px}.map-area:has(+.detail-panel) .layer-control{margin-left:auto}}
+
+.layer-menu{max-height:calc(100dvh - 155px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#57666f transparent}.grid-action{display:flex;align-items:center;justify-content:space-between;width:100%;background:#31464b;border:1px solid #4b706f;padding:9px 10px;margin-top:10px;border-radius:4px;font-size:10px;color:#a7e9e0}.area-sample{width:25px;border-top:2px dashed #6ae0d2}.grid-sample{width:25px;height:12px;background:repeating-linear-gradient(0deg,transparent 0 5px,#46c4ba 5px 6px),repeating-linear-gradient(90deg,transparent 0 5px,#46c4ba 5px 6px)}.secondary-action{background:transparent;border:1px solid #4b636b;border-radius:5px;padding:11px;color:#becfd5;margin-top:10px;font-size:11px}

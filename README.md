@@ -42,18 +42,24 @@ Position, time, and terrain input
 ```text
 frontend/    Web interface, maps, and layer controls
 backend/     Terrain processing, analysis, reports, and APIs
-data/       Source/processed data, samples, and provenance
-docs/       Planning materials, architecture, and setup
+data/        Source/processed data, samples, and provenance
+docs/        Development setup
 .github/     Issue and pull request templates
 ```
 
-Keep the top-level structure small. Split code within frontend and backend when actual implementation needs it. See [architecture](docs/architecture.md).
+Keep the top-level structure small. Split code within frontend and backend when actual implementation needs it.
 
 ## Status and getting started
 
-Only the repository structure and documentation are prepared. There is no executable application, connected map dataset, or trained/validated model yet. The first implementation will establish a Yosemite map with independent layers and a computational grid for future heatmaps.
+The web app now displays Yosemite base maps and satellite imagery, independent contours and hillshade, and a projected 6 m grid within a fixed 6 × 6 km development area. The grid defines geometry and indexing only: terrain resampling and probability values are not yet implemented. Prediction models and report processing remain planned.
 
-See the [setup guide](docs/setup.md). Installation and execution commands will be documented with the first runnable implementation. Docker is not required at this stage.
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Open the Local URL printed by Vite. Use `npm test` for numerical grid checks and `npm run build` for a production build. See [frontend documentation](frontend/README.md) and the [setup guide](docs/setup.md). Docker is not required.
 
 ## Data and evaluation
 
@@ -65,11 +71,6 @@ Do not commit source datasets, large outputs, or secrets. Record provenance and 
 
 ## Documentation
 
-- [Project overview (Korean)](docs/planning/overview.md)
-- [Project plan (Korean)](docs/planning/project-plan.md)
-- [Development specification (Korean)](docs/planning/specification.md)
-- [Architecture](docs/architecture.md)
-- [Map foundation criteria](docs/map-foundation.md)
+- [Frontend: running, data sources, and grid conventions](frontend/README.md)
+- [Setup](docs/setup.md)
 - [Contributing](CONTRIBUTING.md)
-
-Planning materials are reference snapshots. Later decisions, including the simpler structure, Yosemite-first implementation, and optional Docker use, are described in this README and the architecture guide.

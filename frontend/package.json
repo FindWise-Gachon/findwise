@@ -7,12 +7,14 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
   },
   "dependencies": {
     "lucide-react": "^1.66.0",
     "maplibre-contour": "^0.1.1",
     "maplibre-gl": "^6.16.0",
+    "proj4": "^2.22.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
