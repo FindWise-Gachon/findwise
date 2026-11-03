@@ -42,18 +42,24 @@ FindWise는 산악 실종 수색에서 **어디를 먼저 찾아볼지**, **현�
 ```text
 frontend/    웹 화면·지도·레이어 조작
 backend/     지형 처리·분석·보고 처리·API
-data/       원본·가공 자료·작은 예제·출처 기록
-docs/       기획 자료·구조 설계·개발 안내
+data/        원본·가공 자료·작은 예제·출처 기록
+docs/        개발환경 안내
 .github/     작업 및 PR 양식
 ```
 
-폴더를 기능마다 과도하게 늘리지 않고, frontend와 backend 내부에서 실제 구현에 필요한 만큼 나눕니다. [구조 설계](docs/architecture.md)를 참고하세요.
+폴더를 기능마다 과도하게 늘리지 않고, frontend와 backend 내부에서 실제 구현에 필요한 만큼 나눕니다.
 
 ## 개발 상태와 시작 방법
 
-현재는 저장소 구조와 문서를 준비한 단계입니다. 실행 가능한 앱, 연결된 지도 자료, 학습·검증된 모델은 아직 포함되어 있지 않습니다. 첫 구현에서는 요세미티 일부의 지형지도와 독립 레이어 조작, 향후 히트맵을 위한 분석 격자 기반을 준비합니다.
+요세미티 기본·위성 지도, 등고선·음영기복의 독립 표시, 고정 6 × 6km 개발 영역의 6m 분석 격자를 구현했습니다. 격자는 위치·인덱스만 정의하며 고도 재표본화와 확률값은 아직 없습니다. 예측 모델·현장 보고 처리는 후속 구현 목표입니다.
 
-[환경 구성 안내](docs/setup.md)를 참고하세요. 설치·실행 명령은 실행 코드와 함께 추가합니다. Docker는 현재 필수가 아닙니다.
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Vite가 출력한 Local 주소로 접속합니다. `npm test`로 격자 수치 검증, `npm run build`로 빌드를 확인합니다. [프론트엔드 안내](frontend/README.md)와 [환경 구성 안내](docs/setup.md)를 참고하세요. Docker는 현재 필수가 아닙니다.
 
 ## 데이터와 평가
 
@@ -65,11 +71,6 @@ docs/       기획 자료·구조 설계·개발 안내
 
 ## 문서
 
-- [프로젝트 개요서](docs/planning/overview.md)
-- [과제 계획서](docs/planning/project-plan.md)
-- [개발 명세서](docs/planning/specification.md)
-- [기술 구조](docs/architecture.md)
-- [지도 기반 작업 기준](docs/map-foundation.md)
+- [프론트엔드 실행·자료 출처·격자 규약](frontend/README.md)
+- [개발환경 안내](docs/setup.md)
 - [기여 안내](CONTRIBUTING.md)
-
-기획 자료는 참고 원문입니다. 이후 대화에서 합의한 단순 폴더 구조·요세미티 우선 작업·선택적 Docker 사용 등 최신 결정은 이 README와 구조 문서를 따릅니다.
