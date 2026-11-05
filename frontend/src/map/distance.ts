@@ -1,6 +1,6 @@
 import { projectedToCell, type GridSpec } from './grid.ts'
 
-export type DistanceRun = { start: [number, number]; order: Uint32Array }
+export type DistanceRun = { start: [number, number]; order: Uint32Array; lastSeenUtc?: string }
 
 export const distanceModelVersion = 'projected-cell-center-distance-v1'
 
