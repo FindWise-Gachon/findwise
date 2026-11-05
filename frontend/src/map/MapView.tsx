@@ -51,8 +51,6 @@ function showHeatmap(map: MapInstance, run: DistanceRun | null, timeline: Timeli
   if (map.getSource('distance-raster')) {
     map.removeLayer('distance-raster')
     map.removeSource('distance-raster')
-    map.removeLayer('distance-start')
-    map.removeSource('distance-start')
   }
   if (!run && !timeline) return
 
@@ -81,14 +79,10 @@ function showHeatmap(map: MapInstance, run: DistanceRun | null, timeline: Timeli
   map.addSource('distance-raster', { type: 'canvas', canvas, coordinates: rasterCorners, animate: false })
   map.addLayer({ id: 'distance-raster', type: 'raster', source: 'distance-raster',
     paint: { 'raster-resampling': 'nearest', 'raster-fade-duration': 0 } }, 'contours')
-  map.addSource('distance-start', { type: 'geojson', data: {
-    type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: (timeline ?? run)?.start ?? [] },
-  } })
-  map.addLayer({ id: 'distance-start', type: 'circle', source: 'distance-start',
-    paint: { 'circle-radius': 5, 'circle-color': '#202a31', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } })
+
 }
 
-export function MapView({ settings, onReady, onStatus, onZoom, distanceRun, timeline, timelineStep, picking, onPick }: {
+export function MapView({ settings, onReady, onStatus, onZoom, distanceRun, timeline, timelineStep, picking, onPick, casePoint, pointPending, onPointInfo }: {
   settings: MapSettings
   onReady: (map: MapInstance | null) => void
   onStatus: (event: MapStatusEvent) => void
@@ -96,6 +90,9 @@ export function MapView({ settings, onReady, onStatus, onZoom, distanceRun, time
   distanceRun: DistanceRun | null
   timeline: Timeline | null
   timelineStep: number
+  casePoint: [number, number] | null
+  pointPending: boolean
+  onPointInfo: () => void
   picking: boolean
   onPick: (start: [number, number]) => void
 }) {
@@ -168,11 +165,26 @@ export function MapView({ settings, onReady, onStatus, onZoom, distanceRun, time
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    const update = () => showHeatmap(map, distanceRun, timeline, timelineStep)
+    const update = () => showHeatmap(map, settings.heatmap ? distanceRun : null, settings.heatmap ? timeline : null, timelineStep)
     map.on('style.load', update)
     update()
     return () => { map.off('style.load', update) }
-  }, [distanceRun, timeline, timelineStep])
+  }, [distanceRun, timeline, timelineStep, settings.heatmap])
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !casePoint) return
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'case-marker'
+    button.setAttribute('aria-label', pointPending ? '선택한 위치 정보' : '마지막 확인 위치 정보')
+    const label = document.createElement('span')
+    label.className = 'case-marker-label'
+    label.textContent = pointPending ? '선택 위치' : '마지막 확인'
+    button.append(label)
+    button.addEventListener('click', event => { event.stopPropagation(); if (picking) onPick(casePoint); else onPointInfo() })
+    const marker = new maplibregl.Marker({ element: button }).setLngLat(casePoint).addTo(map)
+    return () => { marker.remove() }
+  }, [casePoint, pointPending, onPointInfo, picking, onPick])
   useEffect(() => {
     const map = mapRef.current
     if (!map || !picking) return

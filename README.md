@@ -51,7 +51,7 @@ Keep the top-level structure small. Split code within frontend and backend when 
 
 ## Status and getting started
 
-The web app displays a Yosemite base map and satellite imagery with independent contours and hillshade. The default projected grid has 6 m cells in a 6 × 6 km development area. You can show the boundary, inspect visible grid lines at zoom 16 or higher, and download the grid definition as JSON from Region Info. In Analysis Modules, enter a start location or select one on the map to generate a distance-ranked overlay. Export the run settings as JSON to reproduce it. The overlay shows relative cell ranks within the development grid. Probability models, field report processing, and the backend API are planned. If a map request reports an error, the warning stays visible until you select Retry.
+The web app displays a Yosemite base map and satellite imagery with independent contours and hillshade. The default projected grid has 6 m cells in a 6 × 6 km development area. You can show the boundary, inspect visible grid lines at zoom 16 or higher, and download the grid definition as JSON from Region Info. In Last Known Point, select and confirm the last known point (LKP), enter the last-seen time, and run the distance baseline. Export the run settings as JSON to reproduce it. The overlay shows relative cell ranks within the development grid. Probability models, field report processing, and the backend API are planned. If a map request reports an error, the warning stays visible until you select Retry.
 
 From the repository root, use the Node.js version pinned in [.nvmrc](.nvmrc) (22.21.1).
 
@@ -67,7 +67,7 @@ Open the Local URL printed by Vite in a WebGL-capable browser with internet acce
 
 The bottom of the map shows latitude and longitude while the pointer is over the map.
 
-The time slider in Analysis Modules displays precomputed model snapshots on a shared color scale. Load a timeline JSON with its last known point (LKP) and timestamp, or open the labeled synthetic example. See the [timeline format](frontend/README.md#시간별-결과-형식).
+The time slider under Results displays precomputed model snapshots on a shared color scale. Load a timeline JSON with its last known point (LKP) and timestamp, or open the labeled synthetic example. See the [timeline format](frontend/README.md#시간별-결과-형식).
 
 ## Data and evaluation
 
@@ -85,3 +85,16 @@ Keep raw data, processed results, caches, evaluation data, and secrets out of Gi
 - [Setup](docs/setup.md)
 - [Contributing](CONTRIBUTING.md)
 - [Shared development rules](AGENTS.md)
+
+Terrain features can now be imported as GeoJSON, reviewed on the map, and exported with access settings for the shared model grid. See the [terrain workflow](backend/README.md#지형과-이동-조건).
+
+Water multipolygons now retain islands and split boundaries. Models can use the shared eight-neighbor movement check with an explicit policy for unknown cells.
+
+
+Default terrain layers load automatically from the prepared local OSM snapshot. Toggle trails, roads, rivers and water independently. Click a visible feature to block or allow passage, add a reason and apply. Changes and undo history are saved in this browser. Display toggles do not change model inputs. LKP and last-seen time are saved separately. Map display reset preserves these inputs and applied edits.
+
+Prepare `data/raw/yosemite-terrain-v2.geojson` once using the [terrain workflow](backend/README.md#지형과-이동-조건). The dev server serves this file and builds include it as a separate asset when present. Source datasets stay excluded from Git. If it is unavailable, use Retry or advanced data import. A clean checkout needs this preparation. Browser storage is scoped to the site origin and device.
+
+Timeline JSON can include `terrain_revision`. Results missing this value are shown with unverified terrain settings. Changed case inputs or a mismatched terrain revision produce a visible result warning. The distance baseline continues to rank by distance, and the synthetic timeline is available for interface checks.
+
+The left navigation now separates Last Known Point, Results, Access Settings, and Edit History, with data imports in Data & Settings. Click or keyboard-activate the map marker to inspect last-seen time, elapsed time, result status, and nearby mapped trails and roads. Distances are straight-line measurements to loaded features, not travel times.
