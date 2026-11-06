@@ -31,3 +31,13 @@ test('rejects a different grid, ambiguous time and invalid snapshots', () => {
     { ...sample, frames: [sample.frames[0], { elapsed_seconds: 7200, cells: [[1, .6], [2, .6]] }] },
   ]) assert.throws(() => readTimeline(invalid, grid))
 })
+
+test('model results retain terrain provenance while legacy results stay unverified', () => {
+  assert.equal(readTimeline(sample, grid).terrainRevision, undefined)
+  assert.equal(readTimeline({ ...sample, terrain_revision: 'r1' }, grid).terrainRevision, 'r1')
+  const demo = demoTimeline(grid, sample.lkp, Date.parse(sample.last_seen_utc))
+  assert.deepEqual(demo.start, sample.lkp)
+  assert.equal(demo.lastSeenMs, Date.parse(sample.last_seen_utc))
+  assert.equal(demo.synthetic, true)
+  assert.throws(() => readTimeline({ ...sample, terrain_revision: '' }, grid))
+})
