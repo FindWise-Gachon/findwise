@@ -113,22 +113,47 @@ class UpdateMapTest(unittest.TestCase):
 
     def test_grid_from_dict(self):
         # 실제 frontend/src/map/config.ts의 analysisGrid 필드명
-        g = GridSpec.from_dict({"id": "yosemite-valley-dev-6m-v1", "crs": "EPSG:32611",
-                                "projection": "+proj=utm +zone=11 +datum=WGS84 +units=m +no_defs",
-                                "origin": [268800, 4183680], "cellSizeM": 6, "rows": 1000,
-                                "columns": 1000})
-        self.assertEqual((g.x0, g.y0, g.cell_m, g.shape), (268800.0, 4183680.0, 6.0, (1000, 1000)))
-        self.assertEqual((g.crs, g.grid_id), ("EPSG:32611", "yosemite-valley-dev-6m-v1"))
+        g = GridSpec.from_dict({
+        "schema_version": 1,
+        "grid_id": "yosemite-valley-dev-6m-v1",
+        "crs": "EPSG:32611",
+        "proj4": "+proj=utm +zone=11 +datum=WGS84 +units=m +no_defs",
+        "origin_north_west": [268800, 4183680],
+        "cell_size_m": 6,
+        "rows": 1000,
+        "columns": 1000,
+        })
+        self.assertEqual(
+            (g.x0, g.y0, g.cell_m, g.shape),
+            (268800.0, 4183680.0, 6.0, (1000, 1000)),
+        )
+        self.assertEqual(
+            (g.crs, g.grid_id),
+            ("EPSG:32611", "yosemite-valley-dev-6m-v1"),
+        )
 
         # 이전 snake_case 및 x0/y0 형식도 계속 지원
-        g2 = GridSpec.from_dict({"x0": 0, "y0": 100, "cell_m": 10, "rows": 10, "cols": 10})
+        g2 = GridSpec.from_dict({
+            "x0": 0, "y0": 100, "cell_m": 10, "rows": 10, "cols": 10
+        })
         self.assertEqual(g2.shape, (10, 10))
+
         with self.assertRaises(ValueError):
             GridSpec.from_dict({"rows": 10})
         with self.assertRaises(ValueError):
-            GridSpec.from_dict({"origin": [0, 0], "cellSizeM": 0, "rows": 10, "columns": 10})
+            GridSpec.from_dict({
+                "origin_north_west": [0, 0],
+                "cellSizeM": 0,
+                "rows": 10,
+                "columns": 10,
+            })
         with self.assertRaises(ValueError):
-            GridSpec.from_dict({"origin": [268800], "cellSizeM": 6, "rows": 10, "columns": 10})  # origin 값이 하나뿐
+            GridSpec.from_dict({
+                "origin_north_west": [268800],
+                "cellSizeM": 6,
+                "rows": 10,
+                "columns": 10,
+            })  # 원점 좌표가 하나뿐
 
 
 if __name__ == "__main__":

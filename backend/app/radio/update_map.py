@@ -66,7 +66,7 @@ class GridSpec:
                     return d[k]
             return None
 
-        origin = pick("origin", "origin_xy", "northwest_origin")
+        origin = pick("origin", "origin_xy", "origin_north_west", "northwest_origin")
         if origin is not None and len(origin) < 2:
             raise ValueError("origin은 [x, y] 두 값이어야 합니다")
         x0 = pick("x0") if origin is None else origin[0]
