@@ -67,6 +67,8 @@ class GridSpec:
             return None
 
         origin = pick("origin", "origin_xy", "northwest_origin")
+        if origin is not None and len(origin) < 2:
+            raise ValueError("origin은 [x, y] 두 값이어야 합니다")
         x0 = pick("x0") if origin is None else origin[0]
         y0 = pick("y0") if origin is None else origin[1]
         cell = pick("cellSizeM", "cell_m", "cell_size_m", "cell_size")
@@ -76,8 +78,11 @@ class GridSpec:
         if missing:
             raise ValueError(f"격자 JSON에서 필수 값을 찾지 못했습니다: {', '.join(missing)}")
         crs = pick("crs", "epsg")
-        return cls(x0=float(x0), y0=float(y0), cell_m=float(cell), rows=int(rows), cols=int(cols),
+        spec = cls(x0=float(x0), y0=float(y0), cell_m=float(cell), rows=int(rows), cols=int(cols),
                    crs=str(crs) if crs is not None else "", grid_id=str(pick("grid_id", "id") or ""))
+        if spec.cell_m <= 0 or spec.rows <= 0 or spec.cols <= 0:
+            raise ValueError("격자의 셀 크기, 행 수, 열 수는 0보다 커야 합니다")
+        return spec
 
     @classmethod
     def from_json_file(cls, path) -> "GridSpec":

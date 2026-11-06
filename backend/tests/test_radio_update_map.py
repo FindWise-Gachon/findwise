@@ -125,6 +125,11 @@ class UpdateMapTest(unittest.TestCase):
         self.assertEqual(g2.shape, (10, 10))
         with self.assertRaises(ValueError):
             GridSpec.from_dict({"rows": 10})
+        with self.assertRaises(ValueError):
+            GridSpec.from_dict({"origin": [0, 0], "cellSizeM": 0, "rows": 10, "columns": 10})
+        with self.assertRaises(ValueError):
+            GridSpec.from_dict({"origin": [268800], "cellSizeM": 6, "rows": 10, "columns": 10})  # origin 값이 하나뿐
+
 
 if __name__ == "__main__":
     unittest.main()
