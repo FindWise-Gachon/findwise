@@ -2,6 +2,16 @@
 
 지형 전처리 CLI를 제공합니다. 확률 모델, 보고 처리, API는 후속 구현 범위입니다.
 
+## 실종자 행동 ABM(논문 재현)
+
+`app/abm_reproduction/`은 Hashimoto 외(2022·2026)의 에이전트 기반 실종자 행동 모델을 재현합니다. 행동 전략은 RW(무작위 보행)와 SP(머물기)·VE(높은 곳 오르기)·BT(되돌아가기)를 구현했습니다. SP·VE·BT는 기존 RW 코드를 수정하지 않는 별도 패키지 `strategies/`에 있습니다. RT·DT·결정 지점과 CT(등고선 따라가기)는 구현하지 않았습니다. CT는 논문 본문에 임계값이 없어 부록을 확인한 뒤 추가합니다. 규칙과 미구현 사유는 [행동 전략 패키지](app/abm_reproduction/strategies/README.md)를 참고하세요.
+
+```bash
+cd backend
+python -m app.abm_reproduction.test_paper_rules
+python -m app.abm_reproduction.strategies.test_backtracking
+```
+
 ## 지형 격자 생성
 
 1. 지도 지역 정보에서 격자 정의 JSON을 내보내 `data/processed/grid.json`으로 저장합니다.
