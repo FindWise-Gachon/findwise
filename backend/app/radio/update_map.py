@@ -53,9 +53,9 @@ class GridSpec:
     def from_dict(cls, d: dict) -> "GridSpec":
         """지도에서 내보낸 격자 JSON(dict)으로 GridSpec을 만든다.
 
-        프론트엔드 analysisGrid 형식(origin, cellSizeM, rows, columns, crs, id)과 이전 snake_case 별칭을 모두 지원한다.
+        프론트엔드 analysisGrid 형식(origin, cellSizeM, rows, columns, crs, id), 내보낸 JSON 형식(origin_north_west, cell_size_m, columns, grid_id)과 이전 snake_case 별칭을 모두 지원한다.
         필수 값이 없으면 오류로 알린다.
-          원점: x0/y0 또는 origin / origin_xy / northwest_origin = [x, y] (북서쪽 모서리, m)
+          원점: x0/y0 또는 origin / origin_xy / origin_north_west / northwest_origin = [x, y] (북서쪽 모서리, m)
           셀 크기: cellSizeM / cell_m / cell_size_m / cell_size
           크기: rows, cols 또는 columns
           선택: crs(epsg), id(grid_id)

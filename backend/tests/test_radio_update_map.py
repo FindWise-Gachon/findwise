@@ -112,7 +112,7 @@ class UpdateMapTest(unittest.TestCase):
                         area_mask=np.ones((50, 50), dtype=bool))
 
     def test_grid_from_dict(self):
-        # 실제 frontend/src/map/config.ts의 analysisGrid 필드명
+        # 내보낸 grid.json의 필드명
         g = GridSpec.from_dict({
         "schema_version": 1,
         "grid_id": "yosemite-valley-dev-6m-v1",

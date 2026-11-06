@@ -86,11 +86,8 @@ import numpy as np
 from app.radio.schema import Confidence, EventType, FieldEvent, Location, Status
 from app.radio.update_map import GridSpec, apply_event, new_state, top_zones
 
-grid = GridSpec.from_dict({
-    "id": "yosemite-valley-dev-6m-v1", "crs": "EPSG:32611",
-    "origin": [268800, 4183680], "cellSizeM": 6, "rows": 1000, "columns": 1000,
-})
-state = new_state(np.ones(grid.shape))  # 모델이 만든 확률 격자 (shape은 격자와 같아야 함)
+grid = GridSpec.from_json_file("data/processed/grid.json")  # 지도에서 내보낸 격자 JSON
+state = new_state(np.ones(grid.shape))  # 균등 확률 예시; 실제 사용 시 모델 결과로 대체
 
 event = FieldEvent(
     "e1", EventType.SEARCHED,
