@@ -63,7 +63,7 @@ npm ci
 npm run dev
 ```
 
-인터넷에 연결된 WebGL 지원 브라우저에서 Vite가 출력한 Local 주소를 엽니다. `frontend/`에서 `npm run lint`, `npm test`, `npm run build`로 확인합니다. GitHub Actions는 PR에서 같은 검사를 실행합니다. 로컬 개발에서 Docker는 선택 사항입니다.
+인터넷에 연결된 WebGL 지원 브라우저에서 Vite가 출력한 Local 주소를 엽니다. `frontend/`에서 `npm run lint`, `npm test`, `npm run build`로 확인합니다. GitHub Actions는 PR에서 같은 프런트엔드 검사를 실행합니다. `Backend checks`는 Python 3.13으로 `backend/tests`의 단위 테스트를 실행합니다. 로컬 설치와 테스트 명령은 [백엔드 README](backend/README.md)를 참고하세요. 로컬 개발에서 Docker는 선택 사항입니다.
 
 지도 위에서 마우스를 움직이면 하단에 위도와 경도가 표시됩니다.
 
