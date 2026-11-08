@@ -63,7 +63,7 @@ npm ci
 npm run dev
 ```
 
-인터넷에 연결된 WebGL 지원 브라우저에서 Vite가 출력한 Local 주소를 엽니다. `frontend/`에서 `npm run lint`, `npm test`, `npm run build`로 확인합니다. GitHub Actions는 PR에서 같은 검사를 실행합니다. 로컬 개발에서 Docker는 선택 사항입니다.
+인터넷에 연결된 WebGL 지원 브라우저에서 Vite가 출력한 Local 주소를 엽니다. `frontend/`에서 `npm run lint`, `npm test`, `npm run build`로 확인합니다. GitHub Actions는 PR에서 같은 프런트엔드 검사를 실행합니다. `Backend checks`는 Python 3.13으로 `backend/tests`의 단위 테스트를 실행합니다. 로컬 설치와 테스트 명령은 [백엔드 README](backend/README.md)를 참고하세요. 로컬 개발에서 Docker는 선택 사항입니다.
 
 지도 위에서 마우스를 움직이면 하단에 위도와 경도가 표시됩니다.
 
@@ -72,6 +72,8 @@ npm run dev
 ## 데이터와 평가
 
 선택적으로 백엔드 지형 CLI를 실행해 수치 DEM을 지도에서 내보낸 격자에 정렬하고 경사와 유효 셀 마스크를 계산할 수 있습니다. [지형 CLI](backend/README.md), [요세미티 자료 카탈로그](data/catalog/yosemite.md), [평가 초안](docs/evaluation.md)을 참고하세요.
+
+백엔드의 `backend/app/abm_reproduction/`은 Hashimoto 외(2022·2026)의 에이전트 기반 실종자 행동 모델을 재현합니다. 무작위 보행, 머물기, 높은 곳 오르기, 되돌아가기를 구현했습니다. 경로 따라가기, 방향 유지, 결정 지점, 등고선 따라가기는 아직 없습니다. 등고선 따라가기는 논문 본문에 임계값이 없어 부록의 정의를 확인한 뒤 추가합니다. [행동 전략 패키지](backend/app/abm_reproduction/strategies/README.md)를 참고하세요.
 
 요세미티 시작점–발견점 자료는 이용 조건과 유효 사건쌍을 확인한 뒤 위치 예측 평가에 사용합니다. 실제 무전 기록이 없는 경우 보고 처리·지도 갱신 실험은 합성 시나리오로 분리합니다. 해외 평가 결과를 국내 성능으로 그대로 일반화하지 않습니다.
 

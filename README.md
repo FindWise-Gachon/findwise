@@ -63,7 +63,7 @@ npm ci
 npm run dev
 ```
 
-Open the Local URL printed by Vite in a WebGL-capable browser with internet access. From `frontend/`, run `npm run lint`, `npm test`, and `npm run build`. GitHub Actions runs the same checks on pull requests. Docker is optional for local development.
+Open the Local URL printed by Vite in a WebGL-capable browser with internet access. From `frontend/`, run `npm run lint`, `npm test`, and `npm run build`. GitHub Actions runs the same frontend checks on pull requests. The `Backend checks` workflow also runs the Python 3.13 unit tests in `backend/tests`. See the [backend README](backend/README.md) for the local setup and test command. Docker is optional for local development.
 
 The bottom of the map shows latitude and longitude while the pointer is over the map.
 
@@ -72,6 +72,8 @@ The time slider under Results displays precomputed model snapshots on a shared c
 ## Data and evaluation
 
 The optional backend terrain CLI aligns a numerical DEM to the grid exported by the map and derives slope and a validity mask. See the [terrain CLI](backend/README.md), [Yosemite data catalog](data/catalog/yosemite.md), and [evaluation draft](docs/evaluation.md).
+
+The backend also reproduces the agent-based lost person behavior model of Hashimoto et al. (2022, 2026) in `backend/app/abm_reproduction/`. Random walking, staying put, view enhancing, and backtracking are implemented. Route traveling, direction traveling, decision points, and contouring are not implemented yet. Contouring waits for the paper's supplementary definition because the main text gives no threshold. See the [behavior strategy package](backend/app/abm_reproduction/strategies/README.md).
 
 Yosemite start–find location pairs may be used after validating usage terms and usable case matches. Without actual radio records, report-processing and map-update experiments remain separate synthetic scenarios. Results from overseas data must not be presented as validated domestic performance.
 
