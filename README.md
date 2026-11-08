@@ -73,6 +73,8 @@ The time slider under Results displays precomputed model snapshots on a shared c
 
 The optional backend terrain CLI aligns a numerical DEM to the grid exported by the map and derives slope and a validity mask. See the [terrain CLI](backend/README.md), [Yosemite data catalog](data/catalog/yosemite.md), and [evaluation draft](docs/evaluation.md).
 
+The backend also reproduces the agent-based lost person behavior model of Hashimoto et al. (2022, 2026) in `backend/app/abm_reproduction/`. Random walking, staying put, view enhancing, and backtracking are implemented. Route traveling, direction traveling, decision points, and contouring are not implemented yet. Contouring waits for the paper's supplementary definition because the main text gives no threshold. See the [behavior strategy package](backend/app/abm_reproduction/strategies/README.md).
+
 Yosemite start–find location pairs may be used after validating usage terms and usable case matches. Without actual radio records, report-processing and map-update experiments remain separate synthetic scenarios. Results from overseas data must not be presented as validated domestic performance.
 
 Region and grid settings live in `frontend/src/map/config.ts`. Computational cell size and source elevation resolution are separate. Contours are a display layer. Terrain analysis uses numerical elevation data. Keep evaluation targets, including find locations, out of prediction inputs and search extent selection.
