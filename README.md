@@ -63,7 +63,7 @@ npm ci
 npm run dev
 ```
 
-Open the Local URL printed by Vite in a WebGL-capable browser with internet access. From `frontend/`, run `npm run lint`, `npm test`, and `npm run build`. GitHub Actions runs the same checks on pull requests. Docker is optional for local development.
+Open the Local URL printed by Vite in a WebGL-capable browser with internet access. From `frontend/`, run `npm run lint`, `npm test`, and `npm run build`. GitHub Actions runs the same frontend checks on pull requests. The `Backend checks` workflow also runs the Python 3.13 unit tests in `backend/tests`. See the [backend README](backend/README.md) for the local setup and test command. Docker is optional for local development.
 
 The bottom of the map shows latitude and longitude while the pointer is over the map.
 
