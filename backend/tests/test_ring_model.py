@@ -34,15 +34,15 @@ class RingProbabilityTest(unittest.TestCase):
         self.assertEqual(probability.shape, (200, 200))
         self.assertTrue((probability > 0).all())
         self.assertAlmostEqual(probability.sum(), 1.0, places=12)
-        self.assertAlmostEqual(in_grid_mass, 1.0, delta=0.01)
+        # The grid holds the four rings; the outside 5% is spread over the 50 km square, so little lands here.
+        self.assertAlmostEqual(in_grid_mass, 0.95, delta=0.01)
 
         distance = center_distance(grid, lkp)
         inner = 0
         for outer, expected in zip(DISTANCES, (0.25, 0.25, 0.25, 0.20)):
             ring = (distance > inner) & (distance <= outer)
-            self.assertAlmostEqual(probability[ring].sum(), expected, delta=0.01)
+            self.assertAlmostEqual(probability[ring].sum() * in_grid_mass, expected, delta=0.01)
             inner = outer
-        self.assertAlmostEqual(probability[distance > DISTANCES[-1]].sum(), 0.05, delta=0.01)
 
     def test_inner_rings_have_higher_cell_probability(self):
         probability, _ = ring_probability(make_grid(200, 200), (501000, 3999000), DISTANCES)
@@ -55,7 +55,27 @@ class RingProbabilityTest(unittest.TestCase):
         # LKP on the west edge: about half of every ring falls outside.
         probability, in_grid_mass = ring_probability(make_grid(200, 200), (500005, 3999000), DISTANCES)
         self.assertAlmostEqual(probability.sum(), 1.0, places=12)
-        self.assertAlmostEqual(in_grid_mass, 0.5 * 0.95 + 0.05, delta=0.03)
+        self.assertAlmostEqual(in_grid_mass, 0.5 * 0.95, delta=0.03)
+
+    def test_outside_cells_stay_below_the_95_percent_ring_on_a_small_grid(self):
+        # Only the corners lie beyond the 95% ring. They must not outrank the ring itself.
+        grid = make_grid(110, 110)
+        lkp = (500550, 3999450)
+        probability, _ = ring_probability(grid, lkp, DISTANCES)
+        distance = center_distance(grid, lkp)
+        outside = distance > DISTANCES[-1]
+        last_ring = (distance > DISTANCES[-2]) & (distance <= DISTANCES[-1])
+        self.assertTrue(outside.any())
+        self.assertLess(probability[outside].max(), probability[last_ring].min())
+
+    def test_outside_density_does_not_depend_on_grid_size(self):
+        small, small_mass = ring_probability(make_grid(110, 110), (500550, 3999450), DISTANCES)
+        large, large_mass = ring_probability(make_grid(300, 300), (501500, 3998500), DISTANCES)
+        self.assertAlmostEqual(small[0, 0] * small_mass, large[0, 0] * large_mass, places=15)
+
+    def test_rejects_95_percent_distance_beyond_reference_square(self):
+        with self.assertRaisesRegex(ValueError, "reference square"):
+            ring_probability(make_grid(10, 10), (500050, 3999950), [100.0, 200.0, 300.0, 30000.0])
 
     def test_grid_inside_95_percent_ring_has_no_outside_cells(self):
         grid = make_grid(20, 20)

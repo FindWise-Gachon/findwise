@@ -11,6 +11,7 @@ import numpy as np
 MODEL_VERSION = "isrid-ring-v1"
 PERCENTILES = ("25", "50", "75", "95")
 CUMULATIVE = {"25": 0.25, "50": 0.50, "75": 0.75, "95": 0.95}
+REFERENCE_SIDE_M = 50_000.0  # Sava et al. (2016) draw the rings on a 50 x 50 km square.
 DEFAULT_PROFILES = Path(__file__).with_name("ring_profiles.json")
 
 
@@ -53,7 +54,9 @@ def ring_probability(grid, lkp_xy, distances):
 
     centers_x = west + (np.arange(columns) + 0.5) * cell
     centers_y = north - (np.arange(rows) + 0.5) * cell
-    distance = np.hypot(centers_x[np.newaxis, :] - x, centers_y[:, np.newaxis] - y)
+    dx = centers_x[np.newaxis, :] - x
+    dy = centers_y[:, np.newaxis] - y
+    distance = np.hypot(dx, dy)
 
     # Each annulus holds its percentile mass at uniform density. Mass outside the grid is dropped.
     probability = np.zeros((rows, columns), dtype=np.float64)
@@ -64,10 +67,14 @@ def ring_probability(grid, lkp_xy, distances):
         ring = (distance > inner) & (distance <= outer) if inner > 0 else distance <= outer
         probability[ring] = density * cell * cell
         inner, previous = outer, CUMULATIVE[percentile]
-    # The remaining mass is spread evenly over the grid cells beyond the 95% ring.
-    outside = distance > distances[-1]
-    if outside.any():
-        probability[outside] = (1.0 - CUMULATIVE["95"]) / outside.sum()
+    # The remaining mass has a fixed density over the reference square minus the 95% ring,
+    # so it does not depend on how large the grid is.
+    outside_area = REFERENCE_SIDE_M**2 - math.pi * distances[-1] ** 2
+    if outside_area <= 0:
+        raise ValueError("The 95% distance does not fit in the reference square")
+    half = REFERENCE_SIDE_M / 2
+    outside = (distance > distances[-1]) & (np.abs(dx) <= half) & (np.abs(dy) <= half)
+    probability[outside] = (1.0 - CUMULATIVE["95"]) / outside_area * cell * cell
 
     in_grid_mass = float(probability.sum())
     if in_grid_mass <= 0:
@@ -120,6 +127,7 @@ def main():
         "subject_type": args.subject_type,
         "profile": profile,
         "percentiles": dict(zip(PERCENTILES, distances)),
+        "reference_side_m": REFERENCE_SIDE_M,
         "value_meaning": "probability per cell; sums to 1 within the grid",
         "in_grid_mass": in_grid_mass,
         "software": {"numpy": np.__version__},
