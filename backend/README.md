@@ -1,6 +1,7 @@
 # Backend
 
-지형 전처리 CLI와 거리 기반 모델(Ring Model) CLI를 제공합니다. 지형·행동 모델, 보고 처리, API는 후속 구현 범위입니다.
+지형 전처리 CLI, 거리 기반 모델(Ring Model) CLI, 승인된 현장 보고를 확률 지도에 반영하는 모듈을 제공합니다. 보고 텍스트 구조화와 API 연결은 후속 구현 범위입니다.
+
 
 ## 지형 격자 생성
 
@@ -83,3 +84,57 @@ allowed = can_move(access, (row, column), (next_row, next_column), allow_unknown
 
 
 모델 결과의 `terrain_revision`은 내보낸 지형 패키지의 `revision`과 같아야 합니다. 프론트는 정보가 없거나 버전이 다를 때 경고를 표시합니다. 클라이언트의 표시 토글을 모델의 통행 조건으로 해석하지 않습니다.
+
+## 현장 보고 반영 (`app/radio`)
+
+승인된 현장 이벤트를 확률 격자에 반영하는 모듈입니다. 보고 텍스트 구조화와 API 연결은 아직 없습니다.
+
+| 파일 | 역할 |
+| --- | --- |
+| `app/radio/schema.py` | 무전 보고·이벤트 스키마 (유형, 확인 강도, 상태, JSON 변환) |
+| `app/radio/update_map.py` | 격자 정의, 이벤트 반영, 우선 수색 구역 |
+
+### 반영 규칙
+
+| 이벤트 | 지도 변화 |
+| --- | --- |
+| 수색 완료 | 영역 셀 × (1 − POD) 후 정규화. 확률이 0이 되지 않음(POD 상한 0.95) |
+| 흔적 발견 | 발견 지점 주변 가중치 증가 후 정규화 |
+| 진입 불가·위험 요소 | 확률은 유지하고 표식만 추가 |
+
+- 승인 또는 수정 후 승인 상태의 이벤트만 반영합니다. 승인 대기·거절은 이력만 남깁니다.
+- 같은 `event_id`는 한 번만 반영합니다.
+- 위치(좌표·영역)를 알 수 없으면 반영하지 않고 이력에 사유를 남깁니다.
+- POD(꼼꼼히 0.8 / 보통 0.5 / 대충 0.3)와 흔적 파라미터(반경 300 m, 배율 3.0)는 임시 값입니다.
+- 진입 불가·위험 요소 표식은 위의 통행 조건(`access`)과 아직 연결되어 있지 않습니다. 모델의 이동 제한에는 쓰이지 않습니다.
+
+### 사용 예
+
+```python
+import numpy as np
+from app.radio.schema import Confidence, EventType, FieldEvent, Location, Status
+from app.radio.update_map import GridSpec, apply_event, new_state, top_zones
+
+grid = GridSpec.from_json_file("data/processed/grid.json")  # 지도에서 내보낸 격자 JSON
+state = new_state(np.ones(grid.shape))  # 균등 확률 예시; 실제 사용 시 모델 결과로 대체
+
+event = FieldEvent(
+    "e1", EventType.SEARCHED,
+    Location(value="동쪽 계곡", x=270000, y=4182000, radius_m=200),  # 임의 좌표
+    Confidence.THOROUGH, status=Status.APPROVED,
+)
+state = apply_event(state, event, grid)  # 새 MapState를 돌려줌 (입력은 바뀌지 않음)
+zones = top_zones(state.prob, grid, n=3)  # 우선 수색 구역 Top-3
+```
+
+### 격자 규약
+
+- 좌표는 격자와 같은 투영좌표(m)이며, `origin`은 북서쪽 모서리입니다.
+- 배열은 북→남 행 순서, 각 행은 서→동입니다. 인덱스는 `row * columns + column`입니다.
+- 격자 값은 코드에 고정하지 않고 `GridSpec.from_dict()`/`from_json_file()`로 읽습니다.
+
+### 테스트
+
+```bash
+PYTHONPATH=backend python -m unittest discover -s backend/tests
+```
