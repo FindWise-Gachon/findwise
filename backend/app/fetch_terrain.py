@@ -1,6 +1,8 @@
 """Fetch OSM ways for the geographic bounds of an exported grid."""
 import argparse
 import json
+import time
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from rasterio.warp import transform_bounds
@@ -14,12 +16,81 @@ def main():
     with open(args.grid, encoding="utf-8") as source:
         grid = json.load(source)
     west, south, east, north = transform_bounds(grid["crs"], "EPSG:4326", *grid["projected_extent"], densify_pts=21)
-    box = f"{south},{west},{north},{east}"
-    query = f'[out:json][timeout:60];(way["highway"]({box});way["waterway"]({box});way["natural"="water"]({box});relation["type"="multipolygon"]["natural"="water"]({box});relation["type"="multipolygon"]["waterway"="riverbank"]({box}););out geom;'
-    request = Request("https://overpass-api.de/api/interpreter",
-                      data=urlencode({"data": query}).encode(), headers={"User-Agent": "FindWise-research/0.1"})
-    with urlopen(request, timeout=90) as response:
-        data = json.load(response)
+   
+    # Divide the geographic extent into four tiles.
+    mid_lat = (south + north) / 2
+    mid_lon = (west + east) / 2
+
+    boxes = [
+        (south, west, mid_lat, mid_lon),
+        (south, mid_lon, mid_lat, east),
+        (mid_lat, west, north, mid_lon),
+        (mid_lat, mid_lon, north, east),
+    ]
+
+    endpoint = "https://overpass.kumi.systems/api/interpreter"
+    elements_by_id = {}
+    timestamps = []
+
+    for index, (s, w, n, e) in enumerate(boxes, start=1):
+        box = f"{s},{w},{n},{e}"
+
+        query = (
+            f'[out:json][timeout:120];('
+            f'way["highway"]({box});'
+            f'way["waterway"]({box});'
+            f'way["natural"="water"]({box});'
+            f'relation["type"="multipolygon"]["natural"="water"]({box});'
+            f'relation["type"="multipolygon"]["waterway"="riverbank"]({box});'
+            f');out geom;'
+        )
+
+        print(f"Fetching OSM tile {index}/{len(boxes)}...", flush=True)
+
+        for attempt in range(1, 4):
+            try:
+                request = Request(
+                    endpoint,
+                    data=urlencode({"data": query}).encode(),
+                    headers={"User-Agent": "FindWise-research/0.1"},
+                )
+
+                with urlopen(request, timeout=180) as response:
+                    tile_data = json.load(response)
+
+                if tile_data.get("remark"):
+                    raise RuntimeError(tile_data["remark"])
+
+                break
+
+            except (HTTPError, URLError, TimeoutError) as error:
+                print(f"  Attempt {attempt}/3 failed: {error}", flush=True)
+
+                if attempt == 3:
+                    raise
+
+                time.sleep(10 * attempt)
+
+        for element in tile_data["elements"]:
+            key = (element["type"], element["id"])
+            elements_by_id[key] = element
+
+        timestamp = tile_data.get("osm3s", {}).get("timestamp_osm_base")
+        if timestamp:
+            timestamps.append(timestamp)
+
+        print(
+            f"  Tile {index} completed. "
+            f"Total unique elements: {len(elements_by_id)}",
+            flush=True,
+        )
+
+    data = {
+        "elements": list(elements_by_id.values()),
+        "osm3s": {
+            "timestamp_osm_base": min(timestamps) if timestamps else None
+        },
+    }
     if data.get("remark"):
         raise RuntimeError(data["remark"])
     features = []

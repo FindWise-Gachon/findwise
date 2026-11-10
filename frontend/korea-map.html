@@ -1,0 +1,28 @@
+
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FindWise | 지도</title>
+
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const region = params.get("region") || "bukhansan";
+
+      function getRegionName(region) {
+        if (region.startsWith("bukhansan")) return "북한산";
+        if (region.startsWith("seoraksan")) return "설악산";
+        if (region.startsWith("jirisan")) return "지리산";
+
+        return region;
+      }
+
+      document.title = `FindWise | ${getRegionName(region)} 지도`;
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/korea-map/main.tsx"></script>
+  </body>
+</html>
