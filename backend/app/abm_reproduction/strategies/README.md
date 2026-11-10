@@ -1,6 +1,6 @@
-# 행동 전략 패키지 (SP·VE·BT)
+# 행동 전략 패키지 (RT·DT·SP·VE·BT)
 
-Hashimoto 외 논문의 실종자 행동 전략 중 SP(머물기), VE(높은 곳 오르기), BT(되돌아가기)를 구현한다. 대상 논문은 Sci. Rep. 12:5873(2022)과 16:34104(2026)이다.
+Hashimoto 외 논문의 실종자 행동 전략 중 RT(경로 따라가기), DT(방향 유지), SP(머물기), VE(높은 곳 오르기), BT(되돌아가기)를 구현한다. 대상 논문은 Sci. Rep. 12:5873(2022)과 16:34104(2026)이다.
 
 - **기존 RW 코드는 고치지 않는다.** `agent`, `grid`, `behaviors`, `simulation`, `config`는 import만 한다.
 - 의존 방향은 이 패키지 → 기존 모듈뿐이다.
@@ -9,8 +9,8 @@ Hashimoto 외 논문의 실종자 행동 전략 중 SP(머물기), VE(높은 곳
 | 전략 | 파일 | 상태 |
 |---|---|---|
 | RW 무작위 보행 | `../behaviors.py`, `../simulation.py` | 기존 구현 |
-| RT 경로 따라가기 | — | 미구현 (enum 이름만 있음) |
-| DT 방향 유지 | — | 미구현 (enum 이름만 있음) |
+| RT 경로 따라가기 | `route_traveling.py` | 구현
+| DT 방향 유지 | `direction_traveling.py` | 구현
 | SP 머물기 | `staying_put.py` | 구현 |
 | VE 높은 곳 오르기 | `view_enhancing.py` | 구현 |
 | BT 되돌아가기 | `backtracking.py` | 구현 |
@@ -42,7 +42,28 @@ run_backtracking_continuous(agent, grid, state, backtrack, 850, rng)
 
 고도 배열은 `TerrainGrid`와 모양이 같아야 하고 `[y, x]`(행, 열)로 읽는다. 격자 밖, `valid_mask`가 False인 셀, NaN은 고도를 모르는 칸으로 본다.
 
+**RT, DT의 연속 실행 함수**
+```python
+from app.abm_reproduction.strategies import (
+    BacktrackState,
+    run_route_traveling_continuous,
+    run_direction_traveling_continuous,
+    run_backtracking_continuous,
+    run_staying_put_continuous,
+    run_view_enhancing_continuous,
+)
+```
+RT, DT의 실행 예시는 다음과 같다.
+실제 인자 순서는 구현된 함수 정의를 기준으로 확인한다.
+
+- RT: 선형 지형 정보를 이용한 경로 따라가기
+- DT: 현재 진행 방향을 유지하는 이동
+
+
 ## 전략별 규칙
+**RT.** 현재 진행 방향을 기준으로 주변 셀의 선형 지형을 확인한다. 진행 가능한 전방 후보 중 선형 지형에 해당하는 셀을 이용해 다음 이동 후보를 결정한다. 주변에 적절한 선형 지형이 없으면 RW 방식으로 후보를 생성한다.
+
+**DT.** 현재 에이전트의 진행 방향을 기준으로 전방 이동 후보를 계산한다. 무작위 방향이 아닌, 기존 진행 방향을 유지하는 방향으로 이동을 시도한다.
 
 **SP.** 후보는 현재 위치다. 평활화 식을 적용해도 직전 이동의 0.45배만 남고, 한 스텝 이동은 각 축 최대 1칸이므로 반올림하면 0이 된다. 그래서 평활화와 `move_to` 없이 제자리에 둔다. history와 진행 방향(`dx`, `dy`)은 바뀌지 않는다.
 
@@ -71,9 +92,14 @@ run_backtracking_continuous(agent, grid, state, backtrack, 850, rng)
 
 ## 아직 없는 것과 주의점
 
-- RT·DT, 공간·시간 결정 지점, 행동 PMF 재추첨은 아직 없다. 지금은 호출자가 행동별 연속 실행 함수를 직접 고른다.
-- 통행 판정은 기존 `TerrainGrid.is_accessible()`(도착 셀만 확인, `(x, y)` 순서)를 쓴다. 백엔드 공통 이동 함수 `app/movement.py`의 `can_move()`는 `(row, column)` 순서이고, 대각선 이동 시 양옆 셀도 확인한다. 두 판정을 통일하는 일은 팀에서 따로 정한다.
 
+- 공간·시간 결정 지점에서 행동 전략을 선택하고 PMF(확률질량함수)에 따라 행동을 재추첨하는 통합 제어 로직은 아직 확인되지 않았다. 현재는 호출자가 행동별 연속 실행 함수를 직접 선택하는 구조다.
+
+- RT의 실제 선형 지형 레이어 연동, 전체 행동 전략의 통합 실행, Monte Carlo 반복 실험 및 확률 분포 집계는 추가 구현·검증이 필요하다.
+
+- CT(등고선 따라가기)는 아직 구현하지 않았다.
+- 통행 판정은 기존 `TerrainGrid.is_accessible()`(도착 셀만 확인, `(x, y)` 순서)를 쓴다. 백엔드 공통 이동 함수 `app/movement.py`의 `can_move()`는 `(row, column)` 순서이고, 대각선 이동 시 양옆 셀도 확인한다. 두 판정을 통일하는 일은 팀에서 따로 정한다.
+[y]
 ## 테스트
 
 `backend/`에서 실행한다.
@@ -82,4 +108,9 @@ run_backtracking_continuous(agent, grid, state, backtrack, 850, rng)
 python -m app.abm_reproduction.strategies.test_staying_put
 python -m app.abm_reproduction.strategies.test_view_enhancing
 python -m app.abm_reproduction.strategies.test_backtracking
+```
+
+'findwise/'에서 실행, 6가지 행동 전략 전체 테스트
+```bash
+python -m unittest discover -s backend/app/abm_reproduction -t backend -p "test_*.py" -v
 ```
