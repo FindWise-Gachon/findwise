@@ -13,7 +13,10 @@ from .abm_reproduction.grid import TerrainGrid
 from .abm_reproduction.simulation import (
     INITIAL_OFFSETS, SimulationState, initialize_simulation, run_random_walking_continuous,
 )
-from .abm_reproduction.strategies.view_enhancing import run_view_enhancing_continuous
+from .abm_reproduction.strategies import (
+    BacktrackState, run_backtracking_continuous, run_direction_traveling_continuous,
+    run_route_traveling_continuous, run_staying_put_continuous, run_view_enhancing_continuous,
+)
 from .access import build_access
 from .movement import can_move
 from .ring_model import read_grid
@@ -21,6 +24,14 @@ from .ring_model import read_grid
 SAMPLES = 512
 SEED = 2026
 STEPS_PER_HOUR = 850
+BEHAVIOR_LABELS = {
+    "rw": "무작위 보행",
+    "rt": "경로 따라가기",
+    "dt": "방향 유지",
+    "sp": "제자리에 머무르기",
+    "ve": "높은 곳으로 이동",
+    "bt": "되돌아가기",
+}
 DEFAULT_DEM = Path(__file__).resolve().parents[2] / "data" / "processed" / "yosemite-terrain.npz"
 
 
@@ -68,10 +79,16 @@ def abm_preview(grid, case, *, samples=SAMPLES, dem_path=None):
     behavior = case.get("behavior", "rw")
     slope_limit = case.get("slope_limit")
     reviewed = case.get("terrain")
+    apply_access = case.get("apply_access", reviewed is not None)
+    allow_unknown = case.get("allow_unknown", True)
     if not (0 <= column < columns and 0 <= row < rows and type(hours) is int and hours in (1, 2)):
         raise PreviewInputError("시작 위치와 계산 시간을 확인해 주세요.")
-    if behavior not in ("rw", "ve") or slope_limit not in (None, 35, 45):
+    if (not isinstance(behavior, str) or behavior not in BEHAVIOR_LABELS or
+            slope_limit not in (None, 35, 45) or type(apply_access) is not bool or
+            type(allow_unknown) is not bool or (apply_access and reviewed is None)):
         raise PreviewInputError("행동과 경사 설정을 확인해 주세요.")
+    if behavior == "rt" and reviewed is None:
+        raise PreviewInputError("경로 따라가기에는 등산로·도로 등의 선형 지형 자료가 필요합니다.")
 
     config = ABMConfig(map_size_m=columns * cell, grid_rows=rows, grid_cols=columns)
     valid = np.ones(config.grid_shape, dtype=bool)
@@ -86,13 +103,17 @@ def abm_preview(grid, case, *, samples=SAMPLES, dem_path=None):
             metadata["slope_limit_deg"] = slope_limit
 
     access = np.ones(config.grid_shape, dtype=np.uint8)
-    allow_unknown = case.get("allow_unknown", True)
-    if reviewed is not None:
+    linear_features = None
+    if apply_access or behavior == "rt":
         try:
-            access, _ = build_access({**reviewed, "grid": grid})
+            reviewed_access, linear_features = build_access({**reviewed, "grid": grid})
         except (KeyError, ValueError, TypeError, RuntimeError) as error:
-            raise PreviewInputError("통행 조건 자료를 처리하지 못했습니다. 통행 설정을 확인해 주세요.") from error
-        metadata["access_mode"] = "allow-unknown" if allow_unknown else "known-only"
+            raise PreviewInputError("지형 자료를 처리하지 못했습니다. 지형 설정을 확인해 주세요.") from error
+        if apply_access:
+            access = reviewed_access
+            metadata["access_mode"] = "allow-unknown" if allow_unknown else "known-only"
+        if behavior == "rt" and not linear_features.any():
+            raise PreviewInputError("분석 범위 안에 경로 따라가기에 사용할 선형 지형이 없습니다.")
 
     terrain = ReviewedGrid(config, access, valid, allow_unknown)
     if not valid[row, column]:
@@ -106,24 +127,36 @@ def abm_preview(grid, case, *, samples=SAMPLES, dem_path=None):
     counts = [Counter() for _ in range(hours * 2)]
     for seed in np.random.SeedSequence(SEED).spawn(samples):
         rng = np.random.default_rng(seed)
-        agent = Agent(column, row, behavior=Behavior.VIEW_ENHANCING if behavior == "ve" else Behavior.RANDOM_WALKING)
-        state = initialize_simulation(agent, terrain, rng) if can_depart else SimulationState(agent.position)
-        for frame in counts:
-            if can_depart:
-                if behavior == "ve":
-                    run_view_enhancing_continuous(agent, terrain, elevation, state, STEPS_PER_HOUR // 2, rng, STEPS_PER_HOUR)
-                else:
-                    run_random_walking_continuous(agent, terrain, state, STEPS_PER_HOUR // 2, rng, STEPS_PER_HOUR)
+        agent = Agent(column, row, behavior=Behavior(behavior.upper()))
+        state = initialize_simulation(agent, terrain, rng) if can_depart and behavior != "sp" else SimulationState(agent.position)
+        backtrack = BacktrackState() if behavior == "bt" else None
+        frame_args = (STEPS_PER_HOUR // 2, rng, STEPS_PER_HOUR)
+        for index, frame in enumerate(counts):
+            if can_depart or behavior == "sp":
+                match behavior:
+                    case "rt":
+                        run_route_traveling_continuous(agent, terrain, linear_features, state, *frame_args)
+                    case "dt":
+                        run_direction_traveling_continuous(agent, terrain, state, *frame_args)
+                    case "sp":
+                        run_staying_put_continuous(agent, terrain, state, *frame_args)
+                    case "ve":
+                        run_view_enhancing_continuous(agent, terrain, elevation, state, *frame_args)
+                    case "bt" if index > 0:
+                        run_backtracking_continuous(agent, terrain, state, backtrack, *frame_args)
+                    case _:
+                        # The first BT interval generates a path from the LKP to retrace.
+                        run_random_walking_continuous(agent, terrain, state, *frame_args)
             frame[agent.y * columns + agent.x] += 1
     return {
         "schema_version": 1,
         "grid_id": grid["grid_id"],
-        "model_version": "ABM · 높은 곳으로 이동" if behavior == "ve" else "ABM · 무작위 보행",
+        "model_version": f"ABM · {BEHAVIOR_LABELS[behavior]}",
         "result_kind": "model",
         "lkp": case["lkp"],
         "last_seen_utc": case["last_seen_utc"],
         "abm_preview": metadata,
-        **({"terrain_revision": reviewed["revision"]} if reviewed is not None else {}),
+        **({"terrain_revision": reviewed["revision"]} if apply_access or behavior == "rt" else {}),
         "frames": [
             {"elapsed_seconds": 1800 * step, "cells": [[index, count / samples] for index, count in sorted(frame.items())]}
             for step, frame in enumerate(counts, start=1)

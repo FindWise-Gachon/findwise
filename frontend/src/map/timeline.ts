@@ -1,4 +1,5 @@
 import { cellCenter, projectedToCell, toLngLat, toProjected, type GridSpec } from './grid.ts'
+import { isAbmBehavior, type AbmBehavior } from './abmBehavior.ts'
 
 type Mass = [cellIndex: number, probability: number]
 type Frame = { elapsed_seconds: number; cells: Mass[] }
@@ -12,6 +13,7 @@ export type Timeline = {
   synthetic: boolean
   abmPreview?: {
     samples: number; seed: number
+    behavior?: AbmBehavior
     accessMode?: 'allow-unknown' | 'known-only'
     demVersion?: string
     slopeLimit?: 35 | 45
@@ -74,15 +76,17 @@ export function readTimeline(value: unknown, grid: GridSpec): Timeline {
   let abmPreview: Timeline['abmPreview']
   if (abm_preview !== undefined) {
     if (result_kind !== 'model' || !abm_preview || typeof abm_preview !== 'object') throw fail()
-    const { samples, seed, access_mode, dem_version, slope_limit_deg, can_depart } = abm_preview as Record<string, unknown>
+    const { samples, seed, behavior, access_mode, dem_version, slope_limit_deg, can_depart } = abm_preview as Record<string, unknown>
     if (typeof samples !== 'number' || !Number.isSafeInteger(samples) || samples < 1 ||
         typeof seed !== 'number' || !Number.isSafeInteger(seed) || seed < 0 ||
-        (can_depart !== undefined && typeof can_depart !== 'boolean')) throw fail()
-    if ((terrain_revision === undefined) !== (access_mode === undefined) ||
+        (can_depart !== undefined && typeof can_depart !== 'boolean') ||
+        (behavior !== undefined && !isAbmBehavior(behavior))) throw fail()
+    if ((terrain_revision !== undefined) !== (access_mode !== undefined || behavior === 'rt') ||
         (access_mode !== undefined && access_mode !== 'allow-unknown' && access_mode !== 'known-only') ||
         (dem_version !== undefined && (typeof dem_version !== 'string' || !dem_version)) ||
         (slope_limit_deg !== undefined && (!dem_version || (slope_limit_deg !== 35 && slope_limit_deg !== 45)))) throw fail()
     abmPreview = { samples, seed,
+      ...(isAbmBehavior(behavior) ? { behavior } : {}),
       ...(access_mode ? { accessMode: access_mode } : {}),
       ...(dem_version ? { demVersion: dem_version } : {}),
       ...(slope_limit_deg ? { slopeLimit: slope_limit_deg } : {}),

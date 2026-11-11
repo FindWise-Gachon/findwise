@@ -5,7 +5,7 @@
 
 ## 실종자 행동 ABM(논문 재현)
 
-`app/abm_reproduction/`은 Hashimoto 외(2022·2026)의 에이전트 기반 실종자 행동 모델을 재현합니다. 행동 전략은 RW(무작위 보행)와 SP(머물기)·VE(높은 곳 오르기)·BT(되돌아가기)·RT(경로 따라가기)·DT(방향 유지)를 구현했습니다. RW 이외의 전략은 `strategies/`에 있습니다. 웹 미리보기는 RW·VE만 제공합니다. 결정 지점의 행동 전환과 CT(등고선 따라가기)는 구현하지 않았습니다. CT는 논문 본문에 임계값이 없어 부록을 확인한 뒤 추가합니다. 규칙과 미구현 사유는 [행동 전략 패키지](app/abm_reproduction/strategies/README.md)를 참고하세요.
+`app/abm_reproduction/`은 Hashimoto 외(2022·2026)의 에이전트 기반 실종자 행동 모델을 재현합니다. 행동 전략은 RW(무작위 보행)와 SP(머물기)·VE(높은 곳 오르기)·BT(되돌아가기)·RT(경로 따라가기)·DT(방향 유지)를 구현했습니다. RW 이외의 전략은 `strategies/`에 있습니다. 결정 지점의 행동 전환과 CT(등고선 따라가기)는 구현하지 않았습니다. CT는 논문 본문에 임계값이 없어 부록을 확인한 뒤 추가합니다. 규칙과 미구현 사유는 [행동 전략 패키지](app/abm_reproduction/strategies/README.md)를 참고하세요.
 
 ```bash
 cd backend
@@ -13,7 +13,7 @@ python -m app.abm_reproduction.test_paper_rules
 python -m app.abm_reproduction.strategies.test_backtracking
 ```
 
-로컬 웹 ABM은 `app.abm_preview`에서 기존 RW 또는 VE 루프를 실행합니다. 512개 경로(시드 2026)를 30분 간격으로 집계합니다. **지도 통행 조건 적용**은 현재 적용된 편집만 격자화하며 차단 셀과 막힌 모서리를 통과하지 않습니다. 미확인 셀 허용은 사용자가 선택합니다. VE와 35°·45° 실험용 경사 제한에는 `data/processed/yosemite-terrain.npz` 또는 `FINDWISE_DEM_NPZ`에 지정한 분석용 DEM이 필요합니다. 북한산은 `data/processed/bukhansan-terrain.npz` 또는 `FINDWISE_BUKHANSAN_DEM_NPZ`에 지정한 동일 격자의 분석용 DEM을 사용합니다. 표시용 고도·경사 PNG는 분석용 DEM을 대체하지 않습니다. 경사 제한이 켜지면 기준 초과 및 결측 셀은 이동에서 제외됩니다.
+로컬 웹 ABM은 `app.abm_preview`에서 RW·RT·DT·SP·VE·BT 중 선택한 전략을 실행합니다. RT는 현재 지역의 등산로·도로·하천·물가를 격자로 변환해 사용하며, 전방에 선형 지형 셀이 없으면 RW 규칙으로 후보를 고릅니다. BT는 첫 30분간 RW로 만든 경로를 이후 되짚는 미리보기입니다. SP는 초기 이동 없이 마지막 확인 위치에 머뭅니다. 512개 경로(시드 2026)를 30분 간격으로 집계합니다. **지도 통행 조건 적용**은 현재 적용된 편집만 격자화하며 차단 셀과 막힌 모서리를 통과하지 않습니다. 미확인 셀 허용은 사용자가 선택합니다. VE와 35°·45° 실험용 경사 제한에는 `data/processed/yosemite-terrain.npz` 또는 `FINDWISE_DEM_NPZ`에 지정한 분석용 DEM이 필요합니다. 북한산은 `data/processed/bukhansan-terrain.npz` 또는 `FINDWISE_BUKHANSAN_DEM_NPZ`에 지정한 동일 격자의 분석용 DEM을 사용합니다. 표시용 고도·경사 PNG는 분석용 DEM을 대체하지 않습니다. 경사 제한이 켜지면 기준 초과 및 결측 셀은 이동에서 제외됩니다.
 
 ## 지형 격자 생성
 

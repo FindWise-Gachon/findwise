@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { abmBehaviorLabels, isAbmBehavior, type AbmBehavior } from './abmBehavior'
 import { localDateTime, parseLastSeenTime, type CaseInput } from './case'
 
 function ConfirmTime({ utc, onConfirm, onCancel }: { utc: string; onConfirm: (utc: string) => void; onCancel?: () => void }) {
@@ -53,7 +54,7 @@ export function CoordinateEntry({ point, onSelect }: { point: [number, number] |
 }
 
 export type PreviewModel = 'ring' | 'abm'
-export type AbmOptions = { applyAccess: boolean; allowUnknown: boolean; behavior: 'rw' | 've'; slopeLimit: 35 | 45 | null }
+export type AbmOptions = { applyAccess: boolean; allowUnknown: boolean; behavior: AbmBehavior; slopeLimit: 35 | 45 | null }
 
 export type AnalysisSettings = { model: PreviewModel; hours: 1 | 2; abm: AbmOptions }
 
@@ -76,8 +77,9 @@ export function DistancePanel({ input, hasPending, onInfo, onTime, onRun, onRunM
   const lastSeen = localDateTime(input.lastSeenUtc)
   const { model, hours, abm } = modelSettings
   const setAbm = (options: Partial<AbmOptions>) => onModelSettings({ ...modelSettings, abm: { ...abm, ...options } })
-  const modelName = model === 'ring' ? 'Ring 모델' : abm.behavior === 've' ? 'ABM 높은 곳으로 이동' : 'ABM 무작위 보행'
-  const canRun = Boolean(input.start && timeConfirmed && !hasPending && !running && (model !== 'abm' || !abm.applyAccess || terrainReady))
+  const modelName = model === 'ring' ? 'Ring 모델' : `ABM ${abmBehaviorLabels[abm.behavior]}`
+  const needsTerrain = abm.applyAccess || abm.behavior === 'rt'
+  const canRun = Boolean(input.start && timeConfirmed && !hasPending && !running && (model !== 'abm' || !needsTerrain || terrainReady))
   return <section className="search-input">
     {!input.start && <div className="workspace-next"><h3>어디를 먼저 살펴볼까요?</h3>
       <p className="field-help">마지막 확인 위치와 시각을 입력하면 모델이 계산한 가능성 분포를 지도에서 볼 수 있어요.</p>
@@ -111,12 +113,18 @@ export function DistancePanel({ input, hasPending, onInfo, onTime, onRun, onRunM
             </select>
           </label>
           {model === 'abm' ? <>
-            <label className="measure-picker">행동
+            <label className="measure-picker">행동 전략
               <select value={abm.behavior} disabled={Boolean(running)}
-                onChange={event => setAbm({ behavior: event.target.value === 've' ? 've' : 'rw' })}>
-                <option value="rw">무작위 보행</option><option value="ve">높은 곳으로 이동</option>
+                onChange={event => {
+                  const behavior = event.target.value
+                  if (isAbmBehavior(behavior)) setAbm({ behavior })
+                }}>
+                {Object.entries(abmBehaviorLabels).map(([code, label]) =>
+                  <option key={code} value={code}>{label} ({code.toUpperCase()})</option>)}
               </select>
             </label>
+            {abm.behavior === 'rt' && <p className="field-help">전방의 등산로·도로 등 선형 지형을 우선합니다. 전방에 경로가 없으면 무작위로 이동합니다.</p>}
+            {abm.behavior === 'bt' && <p className="field-help">처음 30분은 무작위로 이동해 경로를 만들고, 이후 그 경로를 되짚습니다.</p>}
             <label className="measure-picker">계산 시간
               <select value={hours} onChange={event => onModelSettings({ ...modelSettings, hours: event.target.value === '2' ? 2 : 1 })} disabled={Boolean(running)}>
                 <option value="1">1시간</option><option value="2">2시간</option>
@@ -136,9 +144,12 @@ export function DistancePanel({ input, hasPending, onInfo, onTime, onRun, onRunM
               </label>
               {(abm.behavior === 've' || abm.slopeLimit !== null) && <p className="field-help">현재 격자에 맞춘 분석용 DEM이 필요합니다.</p>}
             </details>
-            {abm.applyAccess && !terrainReady && <div className="workspace-next">
-              <p className="field-help">지도 통행 자료를 연결하면 이 조건으로 계산할 수 있습니다.</p>
-              <button type="button" className="secondary-action" onClick={() => setAbm({ applyAccess: false })}>통행 조건 적용 해제</button>
+            {needsTerrain && !terrainReady && <div className="workspace-next">
+              <p className="field-help">{abm.behavior === 'rt'
+                ? '지형 편집에서 등산로·도로 등 선형 지형 자료를 연결해 주세요.'
+                : '지도 통행 자료를 연결하면 이 조건으로 계산할 수 있습니다.'}</p>
+              {abm.behavior !== 'rt' && <button type="button" className="secondary-action"
+                onClick={() => setAbm({ applyAccess: false })}>통행 조건 적용 해제</button>}
             </div>}
           </> : <p className="field-help">거리 기반 확률 지도 한 장 · 시간별 이동은 ABM을 선택하세요.</p>}
           <button className="primary-action" type="submit" disabled={!canRun}>{running ? `${modelName} 계산 중…` : `${modelName} 실행`}</button>

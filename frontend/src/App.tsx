@@ -6,6 +6,7 @@ import { useTerrain } from './map/useTerrain'
 import { localDateTime, readCase, readyCase, validLocation, type CaseInput } from './map/case'
 import { TerrainPanel } from './map/TerrainPanel'
 import { PointInfo } from './map/PointInfo'
+import { abmBehaviorLabels } from './map/abmBehavior'
 import { DistancePanel, CoordinateEntry, type AbmOptions, type AnalysisSettings, type PreviewModel } from './map/DistancePanel'
 import { distanceBands, distanceModelVersion, rankByDistance, type DistanceRun } from './map/distance'
 import { MeasureLayer, MeasurePanel } from './map/MeasurePanel'
@@ -372,9 +373,9 @@ function App() {
   const runPreview = async (model: PreviewModel, hours: 1 | 2, options: AbmOptions) => {
     if (previewRequest.current || pendingLocation || !caseInput.start || !readyCase(caseInput, analysisGrid)) return
     let accessInput = null
-    if (model === 'abm' && options.applyAccess) {
+    if (model === 'abm' && (options.applyAccess || options.behavior === 'rt')) {
       if (!terrain.document) {
-        setDistanceMessage('통행 자료를 연결한 뒤 다시 실행해 주세요.')
+        setDistanceMessage('지형 자료를 연결한 뒤 다시 실행해 주세요.')
         return
       }
       const { schema_version, revision, base_feature_count, features } = exportTerrain(terrain.document)
@@ -384,7 +385,7 @@ function App() {
     previewRequest.current = request
     timelineLoad.current++
     setPreviewRunning(model)
-    const label = model === 'ring' ? 'Ring 모델' : options.behavior === 've' ? 'ABM 높은 곳으로 이동' : 'ABM 무작위 보행'
+    const label = model === 'ring' ? 'Ring 모델' : `ABM ${abmBehaviorLabels[options.behavior]}`
     setDistanceMessage(`${label}을 계산하고 있습니다.`)
     try {
       const response = await fetch(modelEndpoint(model), {
@@ -392,7 +393,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(model === 'ring' ? toProjected(analysisGrid, caseInput.start)
           : { lkp: caseInput.start, last_seen_utc: caseInput.lastSeenUtc, hours, terrain: accessInput,
-            behavior: options.behavior, allow_unknown: options.allowUnknown, slope_limit: options.slopeLimit }),
+            behavior: options.behavior, apply_access: options.applyAccess, allow_unknown: options.allowUnknown, slope_limit: options.slopeLimit }),
         signal: request.signal,
       })
       const payload = await response.json()
@@ -467,8 +468,8 @@ function App() {
   const terrainChanged = Boolean(timeline && !timeline.synthetic && timeline.terrainRevision &&
     terrain.document && timeline.terrainRevision !== terrain.document.revision)
   const resultNotice = caseChanged ? '마지막 확인 정보가 변경됨 · 이전 입력의 결과입니다.' :
-    terrainChanged ? '이동 조건이 변경됨 · 변경 전 조건으로 계산된 결과입니다.' :
-    timeline && !timeline.synthetic && timeline.terrainRevision && !terrain.document ? '결과의 이동 조건을 확인하려면 지형 자료를 연결해 주세요.' :
+    terrainChanged ? '지형 자료가 변경됨 · 변경 전 자료로 계산된 결과입니다.' :
+    timeline && !timeline.synthetic && timeline.terrainRevision && !terrain.document ? '계산에 사용한 지형 버전을 확인하려면 자료를 연결해 주세요.' :
     timeline && !timeline.synthetic && !timeline.abmPreview && !timeline.terrainRevision ? '이 결과에는 적용한 이동 조건 버전이 없습니다.' : ''
   const reportRunKey = reportRun?.timeline === timeline ? reportRun?.key ?? '' : ''
   const reportAvailable = searchRecords.ready && Boolean(reportCaseKey) && (reportKind === 'blocked' ||
@@ -490,8 +491,9 @@ function App() {
   }, [timeline, reportRunKey, searchRecords.records, showAdjusted])
   const movement = useMemo(() => displayTimeline?.abmPreview ? abmFrameMetrics(analysisGrid, displayTimeline, timelineStep) : null,
     [displayTimeline, timelineStep])
-  const cannotDepart = timeline?.abmPreview?.canDepart === false
-  const meanDistance = movement ? `${(cannotDepart ? 0 : Math.round(movement.meanDistanceM)).toLocaleString('ko-KR')}m` : ''
+  const stayingPut = timeline?.abmPreview?.behavior === 'sp'
+  const cannotDepart = !stayingPut && timeline?.abmPreview?.canDepart === false
+  const meanDistance = movement ? `${(stayingPut || cannotDepart ? 0 : Math.round(movement.meanDistanceM)).toLocaleString('ko-KR')}m` : ''
   const selectTimelineStep = (step: number) => {
     setPlayingTimeline(false)
     setTimelineStep(step)
@@ -1052,9 +1054,11 @@ function App() {
           </div>}
           {timeline?.abmPreview && <div className="field-help">
             <p>{timeline.abmPreview.samples}개 경로 · 30분 간격</p>
-            <p>{timeline.terrainRevision
-              ? `통행 조건 적용 · 미확인 셀 ${timeline.abmPreview.accessMode === 'known-only' ? '제외' : '허용'} · 버전 ${timeline.terrainRevision.slice(0, 8)}`
+            <p>{timeline.abmPreview.accessMode
+              ? `통행 조건 적용 · 미확인 셀 ${timeline.abmPreview.accessMode === 'known-only' ? '제외' : '허용'}`
               : '지도 통행 조건 미적용'}</p>
+            {timeline.terrainRevision && <p>{timeline.abmPreview.behavior === 'rt' ? '선형 지형 사용 · ' : ''}지형 버전 {timeline.terrainRevision.slice(0, 8)}</p>}
+            {timeline.abmPreview.behavior === 'bt' && <p>처음 30분 무작위 보행 · 이후 같은 경로 되짚기</p>}
             {timeline.abmPreview.demVersion && <p>분석용 DEM 사용{timeline.abmPreview.slopeLimit ? ` · ${timeline.abmPreview.slopeLimit}° 초과 제외` : ''}</p>}
           </div>}
           {ring && <>
