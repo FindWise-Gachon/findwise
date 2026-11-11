@@ -8,7 +8,10 @@ import { analysisGrid, region, sources, type MapSettings } from './config'
 
 import { boundary, emptyGrid, gridExtent, gridMinZoom, toLngLat, visibleGrid } from './grid'
 import { distanceBands, type DistanceRun } from './distance'
+import { paintRingOverlay } from './ringOverlay'
+import type { RingResult } from './ring'
 import type { Timeline } from './timeline'
+import { paintTimelineFrame } from './timelineOverlay'
 import type { MapStatusEvent } from './status'
 
 maplibregl.setWorkerUrl(workerUrl)
@@ -33,6 +36,16 @@ function apply(map: MapInstance, settings: MapSettings) {
   map.setLayoutProperty('base', 'visibility', settings.base === 'base' ? 'visible' : 'none')
   map.setLayoutProperty('satellite', 'visibility', settings.base === 'satellite' ? 'visible' : 'none')
   map.setLayoutProperty('contours', 'visibility', settings.contours ? 'visible' : 'none')
+  for (const [name, path] of Object.entries(region.terrainImages ?? {})) {
+    const id = `regional-${name}`
+    const visible = settings.terrainImage === name
+    if (map.getLayer(id)) {
+      map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none')
+    } else if (visible) {
+      map.addSource(id, { type: 'image', url: `${import.meta.env.BASE_URL}terrain/${path}`, coordinates: rasterCorners })
+      map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-opacity': .64, 'raster-fade-duration': 0 } }, 'contours')
+    }
+  }
   map.setLayoutProperty('hillshade', 'visibility', settings.hillshade ? 'visible' : 'none')
   map.setLayoutProperty('analysis-boundary', 'visibility', settings.area ? 'visible' : 'none')
   map.setLayoutProperty('analysis-grid-lines', 'visibility', settings.grid ? 'visible' : 'none')
@@ -46,13 +59,13 @@ const rasterCorners: [[number, number], [number, number], [number, number], [num
   toLngLat(analysisGrid, [east, south]), toLngLat(analysisGrid, [west, south]),
 ]
 
-function showHeatmap(map: MapInstance, run: DistanceRun | null, timeline: Timeline | null, step: number) {
+function showHeatmap(map: MapInstance, run: DistanceRun | null, ring: RingResult | null, timeline: Timeline | null, step: number, colorMax?: number) {
   if (!map.getLayer('analysis-grid-lines')) return
   if (map.getSource('distance-raster')) {
     map.removeLayer('distance-raster')
     map.removeSource('distance-raster')
   }
-  if (!run && !timeline) return
+  if (!run && !ring && !timeline) return
 
   const canvas = document.createElement('canvas')
   canvas.width = analysisGrid.columns
@@ -61,10 +74,9 @@ function showHeatmap(map: MapInstance, run: DistanceRun | null, timeline: Timeli
   if (!context) return
   const image = context.createImageData(canvas.width, canvas.height)
   if (timeline) {
-    for (const [index, mass] of timeline.frames[step].cells) {
-      const intensity = Math.sqrt(mass / timeline.maxMass)
-      image.data.set([138 + 117 * intensity, 84 + 137 * intensity, 208 - 61 * intensity, 80 + 130 * intensity], index * 4)
-    }
+    paintTimelineFrame(analysisGrid, timeline, step, colorMax ?? timeline.maxMass, image.data)
+  } else if (ring) {
+    paintRingOverlay(ring, analysisGrid, image.data)
   } else if (run) {
     let first = 0
     for (const band of distanceBands) {
@@ -78,23 +90,25 @@ function showHeatmap(map: MapInstance, run: DistanceRun | null, timeline: Timeli
   context.putImageData(image, 0, 0)
   map.addSource('distance-raster', { type: 'canvas', canvas, coordinates: rasterCorners, animate: false })
   map.addLayer({ id: 'distance-raster', type: 'raster', source: 'distance-raster',
-    paint: { 'raster-resampling': 'nearest', 'raster-fade-duration': 0 } }, 'contours')
+    paint: { 'raster-resampling': ring || timeline?.abmPreview ? 'linear' : 'nearest', 'raster-fade-duration': 0 } }, 'contours')
 
 }
 
-export function MapView({ settings, onReady, onStatus, onZoom, distanceRun, timeline, timelineStep, picking, onPick, casePoint, pointPending, onPointInfo }: {
+export function MapView({ settings, onReady, onStatus, onZoom, distanceRun, ring, timeline, timelineStep, colorMax, label, onMapPoint, casePoint, pointPending, onPointInfo }: {
   settings: MapSettings
   onReady: (map: MapInstance | null) => void
   onStatus: (event: MapStatusEvent) => void
   onZoom: (z: number) => void
   distanceRun: DistanceRun | null
+  ring: RingResult | null
   timeline: Timeline | null
   timelineStep: number
+  colorMax?: number
+  label?: string
   casePoint: [number, number] | null
   pointPending: boolean
-  onPointInfo: () => void
-  picking: boolean
-  onPick: (start: [number, number]) => void
+  onPointInfo?: () => void
+  onMapPoint?: (point: [number, number]) => void
 }) {
   const container = useRef<HTMLDivElement>(null)
   const coordinates = useRef<HTMLOutputElement>(null)
@@ -165,33 +179,35 @@ export function MapView({ settings, onReady, onStatus, onZoom, distanceRun, time
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    const update = () => showHeatmap(map, settings.heatmap ? distanceRun : null, settings.heatmap ? timeline : null, timelineStep)
+    const update = () => showHeatmap(map, settings.heatmap ? distanceRun : null, settings.heatmap ? ring : null, settings.heatmap ? timeline : null, timelineStep, colorMax)
     map.on('style.load', update)
     update()
     return () => { map.off('style.load', update) }
-  }, [distanceRun, timeline, timelineStep, settings.heatmap])
+  }, [distanceRun, ring, timeline, timelineStep, colorMax, settings.heatmap])
   useEffect(() => {
     const map = mapRef.current
     if (!map || !casePoint) return
     const button = document.createElement('button')
     button.type = 'button'
+    button.disabled = !onMapPoint && !onPointInfo
     button.className = 'case-marker'
+    if (button.disabled) button.style.pointerEvents = 'none'
     button.setAttribute('aria-label', pointPending ? '선택한 위치 정보' : '마지막 확인 위치 정보')
     const label = document.createElement('span')
     label.className = 'case-marker-label'
     label.textContent = pointPending ? '선택 위치' : '마지막 확인'
     button.append(label)
-    button.addEventListener('click', event => { event.stopPropagation(); if (picking) onPick(casePoint); else onPointInfo() })
+    button.addEventListener('click', event => { event.stopPropagation(); if (onMapPoint) onMapPoint(casePoint); else onPointInfo?.() })
     const marker = new maplibregl.Marker({ element: button }).setLngLat(casePoint).addTo(map)
     return () => { marker.remove() }
-  }, [casePoint, pointPending, onPointInfo, picking, onPick])
+  }, [casePoint, pointPending, onPointInfo, onMapPoint])
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !picking) return
+    if (!map || !onMapPoint) return
     const canvas = map.getCanvas()
     const select = (event: maplibregl.MapMouseEvent) => {
       const { lng, lat } = event.lngLat.wrap()
-      onPick([lng, lat])
+      onMapPoint([lng, lat])
     }
     canvas.style.cursor = 'crosshair'
     map.on('click', select)
@@ -199,9 +215,9 @@ export function MapView({ settings, onReady, onStatus, onZoom, distanceRun, time
       canvas.style.cursor = ''
       map.off('click', select)
     }
-  }, [picking, onPick])
+  }, [onMapPoint])
   return <>
-    <div ref={container} className="map-canvas" aria-label={`${region.shortName} 지도`} />
+    <div ref={container} className="map-canvas" aria-label={label ?? `${region.shortName} 지도`} />
     <output ref={coordinates} className="cursor-coordinates" aria-live="off" hidden />
   </>
 }

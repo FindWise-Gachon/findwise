@@ -9,12 +9,15 @@ const kinds: Record<string, string> = { trail: '등산로', road: '도로', rive
 const accessLayerIds = ['terrain-fill', 'terrain-blocked', 'terrain-lines', 'terrain-unknown']
 const hitLayerIds = ['terrain-lines', 'terrain-paths', 'terrain-water', 'terrain-fill']
 
-export function TerrainPanel({ map, open, onOpen, onClose, picking, layers, terrain }: {
+export function TerrainPanel({ map, open, onOpen, onClose, mapToolBusy, drawing, onDrawingChange, onInspectOverlay, layers, terrain }: {
   map: MapInstance | null
   open: boolean
   onOpen: () => void
   onClose: () => void
-  picking: boolean
+  mapToolBusy: boolean
+  drawing: boolean
+  onDrawingChange: (drawing: boolean) => void
+  onInspectOverlay?: (event: MapMouseEvent) => boolean
   layers: TerrainLayers
   terrain: ReturnType<typeof useTerrain>
 }) {
@@ -25,14 +28,13 @@ export function TerrainPanel({ map, open, onOpen, onClose, picking, layers, terr
   const [reason, setReason] = useState('')
   const [customReason, setCustomReason] = useState('')
   const [message, setMessage] = useState('')
-  const [drawing, setDrawing] = useState(false)
   const [corner, setCorner] = useState<[number, number] | null>(null)
   const [pending, setPending] = useState<TerrainFeature | null>(null)
   const current = pending ?? features.find(feature => feature.properties.id === selected)
   const status = draft ?? current?.properties.status ?? 'unknown'
 
   function close() {
-    setDrawing(false); setCorner(null); setPending(null); setDraft(null); onClose()
+    onDrawingChange(false); setCorner(null); setPending(null); setDraft(null); onClose()
   }
   function select(id: string) {
     setSelected(id); setPending(null); setDraft(null); setReason(''); setCustomReason(''); setMessage('')
@@ -90,7 +92,7 @@ export function TerrainPanel({ map, open, onOpen, onClose, picking, layers, terr
   }, [map, features, layers, open, selected, draft, pending])
 
   useEffect(() => {
-    if (!map || picking) return
+    if (!map || mapToolBusy) return
     const canvas = map.getCanvas()
     if (drawing && open) canvas.style.cursor = 'crosshair'
     const click = (event: MapMouseEvent) => {
@@ -103,9 +105,10 @@ export function TerrainPanel({ map, open, onOpen, onClose, picking, layers, terr
           coordinates: [[corner, [point[0], corner[1]], point, [corner[0], point[1]], corner]] },
           properties: { id, name: '사용자 지정 구역', kind: 'override', source: '사용자 지정', status: 'unknown', reason: '검토 대기' } })
         setSelected(id); setDraft('blocked'); setReason(''); setCustomReason('')
-        setDrawing(false); setCorner(null)
+        onDrawingChange(false); setCorner(null)
         return
       }
+      if (onInspectOverlay?.(event)) return
       const rendered = hitLayerIds.filter(id => map.getLayer(id) && map.getLayoutProperty(id, 'visibility') !== 'none')
       if (!rendered.length) return
       const id = map.queryRenderedFeatures([[event.point.x - 5, event.point.y - 5], [event.point.x + 5, event.point.y + 5]], { layers: rendered })[0]?.properties?.id as string | undefined
@@ -115,11 +118,11 @@ export function TerrainPanel({ map, open, onOpen, onClose, picking, layers, terr
     }
     map.on('click', click)
     return () => { map.off('click', click); if (drawing) canvas.style.cursor = '' }
-  }, [map, picking, drawing, open, document, corner, features, onOpen])
+  }, [map, mapToolBusy, drawing, open, document, corner, features, onOpen, onDrawingChange, onInspectOverlay])
 
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { setDrawing(false); setCorner(null); setPending(null); setDraft(null) }
+      if (event.key === 'Escape') { setCorner(null); setPending(null); setDraft(null) }
     }
     window.addEventListener('keydown', escape)
     return () => window.removeEventListener('keydown', escape)
@@ -145,7 +148,7 @@ export function TerrainPanel({ map, open, onOpen, onClose, picking, layers, terr
   return <>
     {drawing && open && <div className="terrain-drawing" role="status">
       {corner ? '구역의 반대쪽 모서리를 클릭하세요.' : '구역의 첫 모서리를 클릭하세요.'}
-      <button onClick={() => { setDrawing(false); setCorner(null) }}>취소</button>
+      <button onClick={() => { onDrawingChange(false); setCorner(null) }}>취소</button>
     </div>}
     <aside className="terrain-panel" hidden={!open || drawing}>
       <header><h2>통행 설정</h2><button onClick={close} aria-label="통행 설정 닫기">닫기</button></header>
@@ -154,7 +157,7 @@ export function TerrainPanel({ map, open, onOpen, onClose, picking, layers, terr
       {terrain.status === 'error' && <button onClick={terrain.retry}>지형 다시 불러오기</button>}
       <p>지도에서 길이나 수역을 누른 뒤 통행 상태를 정하세요.</p>
       <div className="terrain-actions">
-        <button disabled={!document} onClick={() => { setDrawing(true); setCorner(null); setPending(null); setDraft(null) }}>구역 지정</button>
+        <button disabled={!document} onClick={() => { onDrawingChange(true); setCorner(null); setPending(null); setDraft(null) }}>구역 지정</button>
         <button disabled={!document?.changes.length} onClick={() => {
           setDocument(previous => previous ? undoTerrain(previous) : previous)
           setPending(null); setDraft(null); setMessage('직전 변경을 되돌렸습니다.')

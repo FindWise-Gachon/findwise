@@ -70,9 +70,9 @@ class Agent:
         new_y: int,
         grid: "TerrainGrid",
     ) -> bool:
-        """Move only if the destination is accessible."""
+        """Attempt a move using the movement policy of the grid."""
 
-        if not grid.is_accessible(new_x, new_y):
+        if not grid.can_move(self.position, (new_x, new_y)):
             return False
 
         self.history.append(self.position)
