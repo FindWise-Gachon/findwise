@@ -1,4 +1,4 @@
-"""Behavior strategies 4-6 (SP, VE, BT) built on the RW reproduction code."""
+"""Behavior strategies built on the RW reproduction code."""
 
 from .elevation import check_elevation, elevation_at
 from .staying_put import (
@@ -17,4 +17,14 @@ from .backtracking import (
     backtracking_index,
     backtracking_step,
     run_backtracking_continuous,
+)
+from .direction_traveling import (
+    direction_traveling_candidate,
+    direction_traveling_step, 
+    run_direction_traveling_continuous
+)
+from .route_traveling import (
+    route_traveling_candidate, 
+    route_traveling_step, 
+    run_route_traveling_continuous
 )

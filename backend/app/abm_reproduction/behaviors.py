@@ -2,10 +2,10 @@
 # RW_OFFSETS - 이동 후보 정의
 # rng.integers() - 무작위 선택
 # 임시 목적지 계산 (아직 실제 이동은 아님)
+
 import numpy as np
 
 from .agent import Agent
-
 
 # Nine possible positions in a 3x3 neighborhood
 RW_OFFSETS = [
@@ -13,7 +13,6 @@ RW_OFFSETS = [
     (-1,  0), (0,  0), (1,  0),
     (-1,  1), (0,  1), (1,  1),
 ]
-
 
 def random_walking_candidate(
     agent: Agent,
