@@ -1,17 +1,19 @@
 # Backend
 
-지형 전처리 CLI, 거리 기반 모델(Ring Model) CLI, 승인된 현장 보고를 확률 지도에 반영하는 모듈을 제공합니다. 보고 텍스트 구조화와 API 연결은 후속 구현 범위입니다.
+지형 전처리 CLI, 거리 기반 모델(Ring Model) CLI, 승인된 현장 보고를 확률 지도에 반영하는 모듈을 제공합니다. 로컬 Vite 개발 서버에서 Ring·ABM·승인 보고 미리보기 API를 제공합니다. 보고 텍스트 구조화와 운영용 백엔드 API는 후속 구현 범위입니다.
 
 
 ## 실종자 행동 ABM(논문 재현)
 
-`app/abm_reproduction/`은 Hashimoto 외(2022·2026)의 에이전트 기반 실종자 행동 모델을 재현합니다. 행동 전략은 RW(무작위 보행)와 SP(머물기)·VE(높은 곳 오르기)·BT(되돌아가기)를 구현했습니다. SP·VE·BT는 기존 RW 코드를 수정하지 않는 별도 패키지 `strategies/`에 있습니다. RT·DT·결정 지점과 CT(등고선 따라가기)는 구현하지 않았습니다. CT는 논문 본문에 임계값이 없어 부록을 확인한 뒤 추가합니다. 규칙과 미구현 사유는 [행동 전략 패키지](app/abm_reproduction/strategies/README.md)를 참고하세요.
+`app/abm_reproduction/`은 Hashimoto 외(2022·2026)의 에이전트 기반 실종자 행동 모델을 재현합니다. 행동 전략은 RW(무작위 보행)와 SP(머물기)·VE(높은 곳 오르기)·BT(되돌아가기)·RT(경로 따라가기)·DT(방향 유지)를 구현했습니다. RW 이외의 전략은 `strategies/`에 있습니다. 웹 미리보기는 RW·VE만 제공합니다. 결정 지점의 행동 전환과 CT(등고선 따라가기)는 구현하지 않았습니다. CT는 논문 본문에 임계값이 없어 부록을 확인한 뒤 추가합니다. 규칙과 미구현 사유는 [행동 전략 패키지](app/abm_reproduction/strategies/README.md)를 참고하세요.
 
 ```bash
 cd backend
 python -m app.abm_reproduction.test_paper_rules
 python -m app.abm_reproduction.strategies.test_backtracking
 ```
+
+로컬 웹 ABM은 `app.abm_preview`에서 기존 RW 또는 VE 루프를 실행합니다. 512개 경로(시드 2026)를 30분 간격으로 집계합니다. **지도 통행 조건 적용**은 현재 적용된 편집만 격자화하며 차단 셀과 막힌 모서리를 통과하지 않습니다. 미확인 셀 허용은 사용자가 선택합니다. VE와 35°·45° 실험용 경사 제한에는 `data/processed/yosemite-terrain.npz` 또는 `FINDWISE_DEM_NPZ`에 지정한 분석용 DEM이 필요합니다. 북한산은 `data/processed/bukhansan-terrain.npz` 또는 `FINDWISE_BUKHANSAN_DEM_NPZ`에 지정한 동일 격자의 분석용 DEM을 사용합니다. 표시용 고도·경사 PNG는 분석용 DEM을 대체하지 않습니다. 경사 제한이 켜지면 기준 초과 및 결측 셀은 이동에서 제외됩니다.
 
 ## 지형 격자 생성
 
@@ -62,7 +64,8 @@ LKP는 `--lkp-xy X Y`(격자와 같은 투영좌표, m)로도 지정할 수 있�
 
 - 개발 격자(6 km)는 등산객 95% 거리(약 18~19 km)보다 작아 확률의 절반 미만만 들어옵니다. `in_grid_mass`로 확인합니다.
 - 바깥 5%의 밀도는 격자 크기와 무관합니다. LKP에서 25 km보다 먼 셀은 확률이 0입니다.
-- 프론트는 NPZ를 직접 읽지 못합니다. 지도에서 보려면 시간별 결과 JSON으로 변환해야 하며 변환 스크립트는 포함하지 않았습니다.
+- 웹에서 **Ring 모델 실행**을 누르면 로컬 Vite 서버가 `ring_preview.py`를 호출해 동일한 계산 함수의 결과를 지도에 전달합니다. 실행에는 `backend/.venv/bin/python`을 사용하며, 다른 환경은 Vite 실행 전에 `FINDWISE_PYTHON`에 Python 실행 파일의 절대 경로를 지정할 수 있습니다.
+- CLI가 저장한 NPZ는 분석용 파일입니다. 웹의 시간별 결과 가져오기는 기존 JSON 형식을 사용합니다.
 
 ## 지형과 이동 조건
 
@@ -97,7 +100,7 @@ allowed = can_move(access, (row, column), (next_row, next_column), allow_unknown
 
 ## 현장 보고 반영 (`app/radio`)
 
-승인된 현장 이벤트를 확률 격자에 반영하는 모듈입니다. 보고 텍스트 구조화와 API 연결은 아직 없습니다.
+승인된 현장 이벤트를 확률 격자에 반영하는 모듈입니다. 로컬 웹에서는 `app.report_preview`로 사람이 승인한 수색 완료 보고를 현재 ABM 시점에만 반영합니다. 계산 함수는 상태를 저장하지 않으며, 웹이 승인 기록과 계산 결과를 브라우저에 함께 저장한 뒤 표시합니다. 진입 불가 보고와 구역 겹침 검토는 웹에서 기록으로 관리합니다. 보고 텍스트 구조화는 후속 범위입니다.
 
 | 파일 | 역할 |
 | --- | --- |

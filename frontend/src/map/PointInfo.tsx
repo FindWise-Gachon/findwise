@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { labels } from './terrain'
 import { analysisGrid } from './config'
 import { elapsedSince, nearbyWays } from './pointDetails'
+import { DeleteAction } from './DeleteAction'
 import { visibleTerrain, type TerrainDocument } from './terrainDocument'
 
-export function PointInfo({ point, pending, lastSeenUtc, resultLabel, terrain, onClose, onConfirm, onEdit, onPick }: {
+export function PointInfo({ point, pending, lastSeenUtc, resultLabel, terrain, onClose, onConfirm, onEdit, onPick, onRemove }: {
   point: [number, number]
   pending: boolean
   lastSeenUtc: string
@@ -14,6 +15,7 @@ export function PointInfo({ point, pending, lastSeenUtc, resultLabel, terrain, o
   onConfirm: () => void
   onEdit: () => void
   onPick: () => void
+  onRemove: () => void
 }) {
   const [now, setNow] = useState(Date.now)
   const [copyStatus, setCopyStatus] = useState('')
@@ -45,5 +47,8 @@ export function PointInfo({ point, pending, lastSeenUtc, resultLabel, terrain, o
     {pending ? <button className="primary-action" onClick={onConfirm}>이 위치로 설정</button> :
       <button className="primary-action" onClick={onEdit}>{lastSeenUtc ? '확인 정보 수정' : '확인 시각 입력'}</button>}
     <button className="secondary-action" onClick={onPick}>다른 위치 선택</button>
+    {pending ? <button className="secondary-action" onClick={onRemove}>선택 취소</button> :
+      <DeleteAction key={point.join(',')} label="마지막 확인 위치 삭제"
+        question="이 위치와 이 위치에서 계산한 지도 결과를 지울까요?" onDelete={onRemove} />}
   </section>
 }

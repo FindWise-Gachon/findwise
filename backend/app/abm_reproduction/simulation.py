@@ -141,7 +141,7 @@ def initialize_simulation(
         new_x = agent.x + dx
         new_y = agent.y + dy
 
-        if grid.is_accessible(new_x, new_y):
+        if grid.can_move(start_position, (new_x, new_y)):
             candidates.append((new_x, new_y))
 
     if not candidates:
