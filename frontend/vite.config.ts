@@ -6,6 +6,7 @@ import { defineConfig, type Plugin } from 'vite'
 import { defaultRegionId, findRegion } from './src/map/regions.ts'
 import { terrainAssets } from './terrainAssets.ts'
 import { gridManifest, projectedToCell, toProjected } from './src/map/grid.ts'
+import { isAbmBehavior } from './src/map/abmBehavior.ts'
 
 const runPython = promisify(execFile)
 const backendPath = fileURLToPath(new URL('../backend/', import.meta.url))
@@ -54,7 +55,8 @@ function modelPreview(): Plugin {
             args = point.map(String)
           } else if (model === 'abm') {
             if (!point || typeof point !== 'object') return reject(400, 'ABM 입력 형식을 확인해 주세요.')
-            const { lkp, last_seen_utc, hours, terrain, allow_unknown, behavior, slope_limit } = point as Record<string, unknown>
+            const { lkp, last_seen_utc, hours, terrain, allow_unknown, behavior, slope_limit,
+              apply_access = terrain !== null } = point as Record<string, unknown>
             if (!isCoordinatePair(lkp) || Math.abs(lkp[0]) > 180 || Math.abs(lkp[1]) > 90 ||
                 typeof last_seen_utc !== 'string' || !Number.isFinite(Date.parse(last_seen_utc)) ||
                 new Date(last_seen_utc).toISOString() !== last_seen_utc || (hours !== 1 && hours !== 2)) {
@@ -62,8 +64,10 @@ function modelPreview(): Plugin {
             }
             const projected = toProjected(analysisGrid, lkp)
             if (!projectedToCell(analysisGrid, ...projected)) return reject(400, '분석 범위 안에서 위치를 선택해 주세요.')
-            if ((behavior !== 'rw' && behavior !== 've') || (slope_limit !== null && slope_limit !== 35 && slope_limit !== 45) ||
-                typeof allow_unknown !== 'boolean') return reject(400, 'ABM 행동과 이동 조건을 확인해 주세요.')
+            if (!isAbmBehavior(behavior) || (slope_limit !== null && slope_limit !== 35 && slope_limit !== 45) ||
+                typeof allow_unknown !== 'boolean' || typeof apply_access !== 'boolean' || (apply_access && terrain === null)) {
+              return reject(400, 'ABM 행동과 이동 조건을 확인해 주세요.')
+            }
             if (terrain !== null) {
               if (!terrain || typeof terrain !== 'object') return reject(400, '통행 조건 자료를 확인해 주세요.')
               const { schema_version, revision, base_feature_count, features } = terrain as Record<string, unknown>
@@ -74,7 +78,7 @@ function modelPreview(): Plugin {
               }
             }
             args = []
-            stdin = JSON.stringify({ point: projected, lkp, last_seen_utc, hours, terrain, allow_unknown, behavior, slope_limit })
+            stdin = JSON.stringify({ point: projected, lkp, last_seen_utc, hours, terrain, apply_access, allow_unknown, behavior, slope_limit })
           } else {
             args = []
             stdin = JSON.stringify(point)

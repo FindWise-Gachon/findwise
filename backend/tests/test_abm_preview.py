@@ -4,6 +4,58 @@ from app.abm_preview import PreviewInputError, abm_preview
 
 
 class AbmPreviewTest(unittest.TestCase):
+    def test_stationary_directional_and_backtracking_previews(self):
+        grid = {
+            "schema_version": 1, "grid_id": "sample", "origin_north_west": [0, 600],
+            "cell_size_m": 6, "rows": 100, "columns": 100,
+        }
+        case = {"point": [303, 297], "lkp": [-119.59, 37.76],
+                "last_seen_utc": "2026-11-08T12:00:00.000Z", "hours": 1}
+        stationary = abm_preview(grid, {**case, "behavior": "sp"}, samples=8)
+        self.assertEqual([frame["cells"] for frame in stationary["frames"]], [[[5050, 1.0]]] * 2)
+
+        walk = abm_preview(grid, case, samples=8)
+        directional = abm_preview(grid, {**case, "behavior": "dt"}, samples=8)
+        self.assertNotEqual(walk["frames"], directional["frames"])
+
+        retrace = abm_preview(grid, {**case, "behavior": "bt", "hours": 2}, samples=8)
+        self.assertEqual(retrace["frames"][0], walk["frames"][0])
+        self.assertTrue(all(
+            abs(index // 100 - 50) <= 1 and abs(index % 100 - 50) <= 1
+            for index, _ in retrace["frames"][1]["cells"]
+        ))
+        self.assertEqual(retrace["frames"][-1]["cells"], [[5050, 1.0]])
+
+    def test_route_preview_uses_projected_trail_with_or_without_access_policy(self):
+        from rasterio.warp import transform_geom
+
+        grid = {
+            "schema_version": 1, "grid_id": "sample", "crs": "EPSG:32611",
+            "origin_north_west": [500000, 600], "cell_size_m": 6, "rows": 100, "columns": 100,
+            "cell_count": 10000, "geo_transform": [500000, 6, 0, 600, 0, -6],
+        }
+        case = {"point": [500003, 297], "lkp": [-117, 0.0027], "behavior": "rt",
+                "last_seen_utc": "2026-11-08T12:00:00.000Z", "hours": 1}
+        with self.assertRaisesRegex(PreviewInputError, "선형 지형 자료"):
+            abm_preview(grid, case, samples=8)
+        terrain = {"schema_version": 1, "revision": "test-trail", "features": []}
+        with self.assertRaisesRegex(PreviewInputError, "사용할 선형 지형이 없습니다"):
+            abm_preview(grid, {**case, "terrain": terrain}, samples=8)
+
+        trail = transform_geom("EPSG:32611", "EPSG:4326", {
+            "type": "LineString", "coordinates": [[500001, 297], [500599, 297]],
+        })
+        terrain["features"] = [{"geometry": trail, "properties": {"status": "allowed", "kind": "trail"}}]
+        route_only = abm_preview(grid, {**case, "terrain": terrain, "apply_access": False}, samples=16)
+        walk = abm_preview(grid, {**case, "behavior": "rw"}, samples=16)
+        self.assertNotEqual(route_only["frames"], walk["frames"])
+        self.assertEqual(route_only["terrain_revision"], "test-trail")
+        self.assertNotIn("access_mode", route_only["abm_preview"])
+
+        restricted = abm_preview(grid, {**case, "terrain": terrain, "allow_unknown": False}, samples=8)
+        self.assertTrue(all(index // 100 == 50 for frame in restricted["frames"] for index, _ in frame["cells"]))
+        self.assertEqual(restricted["abm_preview"]["access_mode"], "known-only")
+
     def test_frames_are_reproducible_and_count_all_agents_inside_the_grid(self):
         grid = {
             "schema_version": 1, "grid_id": "sample", "origin_north_west": [0, 600],

@@ -51,6 +51,10 @@ test('recognizes ABM preview metadata and requires complete snapshot mass', () =
   assert.throws(() => readTimeline({ ...preview, abm_preview: { ...preview.abm_preview, can_depart: 'false' } }, grid))
   assert.throws(() => readTimeline({ ...preview, frames: sample.frames }, grid))
   assert.throws(() => readTimeline({ ...preview, terrain_revision: 'r1' }, grid))
+  const route = { ...preview, terrain_revision: 'r1', abm_preview: { ...preview.abm_preview, behavior: 'rt' } }
+  assert.equal(readTimeline(route, grid).abmPreview?.behavior, 'rt')
+  assert.equal(readTimeline(route, grid).abmPreview?.accessMode, undefined)
+  assert.throws(() => readTimeline({ ...route, terrain_revision: undefined }, grid))
 })
 
 test('summarizes displacement and detects an unchanged distribution regardless of cell order', () => {

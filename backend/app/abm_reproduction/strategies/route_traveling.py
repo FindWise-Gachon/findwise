@@ -17,7 +17,7 @@ of the paper's feature detection and forward persistence).
 # 5. 후보가 없으면 RW 사용
 # 6. 기존 smoothing 적용 후 이동
 # RT는 linear_feature_mask가 있어야 실제 지형 기반으로 작동함
-# 현재는 테스트용 마스크로 검증했으며, 실제 레이어(등산로,도로,등)와 연결하는 작업 필요
+# 웹 미리보기는 지형 자료를 분석 격자에 투영해 이 마스크를 만든다.
 
 import numpy as np
 from ..agent import Agent
