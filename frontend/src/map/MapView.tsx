@@ -184,6 +184,7 @@ export function MapView({ settings, onReady, onStatus, onZoom, distanceRun, ring
     update()
     return () => { map.off('style.load', update) }
   }, [distanceRun, ring, timeline, timelineStep, colorMax, settings.heatmap])
+  const showTimelineHeatmap = settings.heatmap && Boolean(timeline)
   useEffect(() => {
     const map = mapRef.current
     if (!map || !casePoint) return
@@ -191,6 +192,7 @@ export function MapView({ settings, onReady, onStatus, onZoom, distanceRun, ring
     button.type = 'button'
     button.disabled = !onMapPoint && !onPointInfo
     button.className = 'case-marker'
+    if (showTimelineHeatmap) button.classList.add('case-marker-over-timeline')
     if (button.disabled) button.style.pointerEvents = 'none'
     button.setAttribute('aria-label', pointPending ? '선택한 위치 정보' : '마지막 확인 위치 정보')
     const label = document.createElement('span')
@@ -200,7 +202,7 @@ export function MapView({ settings, onReady, onStatus, onZoom, distanceRun, ring
     button.addEventListener('click', event => { event.stopPropagation(); if (onMapPoint) onMapPoint(casePoint); else onPointInfo?.() })
     const marker = new maplibregl.Marker({ element: button }).setLngLat(casePoint).addTo(map)
     return () => { marker.remove() }
-  }, [casePoint, pointPending, onPointInfo, onMapPoint])
+  }, [casePoint, pointPending, onPointInfo, onMapPoint, showTimelineHeatmap])
   useEffect(() => {
     const map = mapRef.current
     if (!map || !onMapPoint) return
