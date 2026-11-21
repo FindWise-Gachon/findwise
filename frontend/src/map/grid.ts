@@ -36,12 +36,14 @@ function segment(g: GridSpec, a: [number, number], b: [number, number]) {
   const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 250))
   return Array.from({ length: n + 1 }, (_, i) => toLngLat(g, [a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n]))
 }
-export function boundary(g: GridSpec): Feature<Polygon> {
-  const [w, s, e, n] = gridExtent(g)
+export function projectedRectangle(g: GridSpec, [w, s, e, n]: [number, number, number, number]): Feature<Polygon> {
   const corners: [number, number][] = [[w, n], [e, n], [e, s], [w, s], [w, n]]
   const ring = corners.slice(0, 4).flatMap((p, i) => segment(g, p, corners[i + 1]).slice(0, -1))
   ring.push(ring[0])
   return { type: 'Feature', properties: { grid_id: g.id }, geometry: { type: 'Polygon', coordinates: [ring] } }
+}
+export function boundary(g: GridSpec) {
+  return projectedRectangle(g, gridExtent(g))
 }
 export const gridMinZoom = 16
 export const emptyGrid: FeatureCollection<LineString> = { type: 'FeatureCollection', features: [] }

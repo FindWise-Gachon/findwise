@@ -54,6 +54,10 @@ class TerrainGrid:
 
         return True
 
+    def can_move(self, start: tuple[int, int], destination: tuple[int, int]) -> bool:
+        """Default paper reproduction rule: check the destination cell."""
+        return self.is_accessible(*destination)
+
 
 if __name__ == "__main__":
     config = ABMConfig()

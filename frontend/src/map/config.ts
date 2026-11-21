@@ -1,20 +1,17 @@
-import { validateGrid } from './grid'
-export const region = {
-  id: 'yosemite-valley',
-  name: '요세미티 국립공원',
-  shortName: '요세미티',
-  placeName: 'Yosemite Valley',
-  location: '미국 · 캘리포니아',
-  placeContext: 'California',
-  center: [-119.59, 37.745] as [number, number], zoom: 12,
-}
+import { defaultRegionId, findRegion, regions } from './regions.ts'
+
+const regionId = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('region')
+export const region = (regionId && findRegion(regionId)) || regions[defaultRegionId]
+export const analysisGrid = region.grid
+
 export const sources = {
   base: { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap contributors</a>' },
   satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attribution: 'Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community' },
   elevation: { url: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png', attribution: 'Elevation: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank">Mapzen / AWS Terrain Tiles</a>' },
 }
-export type MapSettings = { base: 'base' | 'satellite'; contours: boolean; hillshade: boolean; opacity: number; area: boolean; grid: boolean; trail: boolean; road: boolean; river: boolean; water: boolean; access: boolean; heatmap: boolean }
-export const defaults: MapSettings = { base: 'base', contours: true, hillshade: true, opacity: 65, area: true, grid: false, trail: true, road: true, river: true, water: true, access: false, heatmap: true }
+export type TerrainImage = 'none' | 'elevation' | 'slope'
+export type MapSettings = { base: 'base' | 'satellite'; contours: boolean; hillshade: boolean; opacity: number; area: boolean; grid: boolean; trail: boolean; road: boolean; river: boolean; water: boolean; access: boolean; heatmap: boolean; terrainImage: TerrainImage }
+export const defaults: MapSettings = { base: 'base', contours: true, hillshade: true, opacity: 65, area: true, grid: false, trail: true, road: true, river: true, water: true, access: false, heatmap: true, terrainImage: 'none' }
 export function readSettings(): MapSettings {
   try {
     const s = JSON.parse(localStorage.getItem('findwise.map.v1') || '{}')
@@ -23,14 +20,8 @@ export function readSettings(): MapSettings {
       river: typeof s.river === 'boolean' ? s.river : true,
       water: typeof s.water === 'boolean' ? s.water : true,
       access: typeof s.access === 'boolean' ? s.access : false,
+      terrainImage: s.terrainImage === 'elevation' || s.terrainImage === 'slope' ? s.terrainImage : 'none',
       heatmap: typeof s.heatmap === 'boolean' ? s.heatmap : true,
       area: typeof s.area === 'boolean' ? s.area : true, grid: typeof s.grid === 'boolean' ? s.grid : false, base: s.base === 'satellite' ? 'satellite' : 'base', contours: typeof s.contours === 'boolean' ? s.contours : true, hillshade: typeof s.hillshade === 'boolean' ? s.hillshade : true, opacity: typeof s.opacity === 'number' && Number.isFinite(s.opacity) ? Math.max(0, Math.min(100, s.opacity)) : 65 }
   } catch { return defaults }
 }
-
-// Fixed, projected development area. Do not choose an evaluation extent using find locations.
-export const analysisGrid = validateGrid({
-  id: 'yosemite-valley-dev-6m-v1', crs: 'EPSG:32611',
-  projection: '+proj=utm +zone=11 +datum=WGS84 +units=m +no_defs',
-  origin: [268800, 4183680], cellSizeM: 6, rows: 1000, columns: 1000,
-})

@@ -1,0 +1,54 @@
+{
+  "_comment": "ISRID distance quantiles in metres by subject category, climate domain and terrain (Koester 2008 tables). null values are refused. Never tune from Yosemite find locations.",
+  "schema_version": 1,
+  "profiles": {
+    "hiker_temperate_mountain": {
+      "label_ko": "등산객 (온대, 산악)",
+      "isrid_category": "Hiker",
+      "domain": "temperate",
+      "terrain": "mountain",
+      "distance_m": {"25": 1100, "50": 3100, "75": 5800, "95": 18200},
+      "source": {"title": "Lost Person Behavior", "author": "Robert J. Koester", "year": 2008, "via": "Sava et al. (2016) Table 1 gives 0.7/1.9/3.6/11.3 in miles; km values cross-checked with Doherty et al. (2014) and Conover, Circh & Koester (2018)", "n": 568}
+    },
+    "hiker_dry_mountain": {
+      "label_ko": "등산객 (건조, 산악)",
+      "isrid_category": "Hiker",
+      "domain": "dry",
+      "terrain": "mountain",
+      "distance_m": {"25": 1600, "50": 3200, "75": 6400, "95": 19200},
+      "source": {"title": "Lost Person Behavior", "author": "Robert J. Koester", "year": 2008, "via": "Sava et al. (2016) Table 1 gives 1.0/2.0/4.0/11.9 in miles; converted to km (1 mi = 1.609 km)", "n": 221}
+    },
+    "dementia_temperate_mountain": {
+      "label_ko": "치매 노인 (온대, 산악)",
+      "isrid_category": "Dementia",
+      "domain": "temperate",
+      "terrain": "mountain",
+      "distance_m": {"25": null, "50": null, "75": null, "95": null},
+      "source": {"title": "Lost Person Behavior", "author": "Robert J. Koester", "year": 2008, "table": "", "page": ""}
+    },
+    "dementia_dry_mountain": {
+      "label_ko": "치매 노인 (건조, 산악)",
+      "isrid_category": "Dementia",
+      "domain": "dry",
+      "terrain": "mountain",
+      "distance_m": {"25": null, "50": null, "75": null, "95": null},
+      "source": {"title": "Lost Person Behavior", "author": "Robert J. Koester", "year": 2008, "table": "", "page": ""}
+    },
+    "despondent_temperate_mountain": {
+      "label_ko": "자살 우려자 (온대, 산악)",
+      "isrid_category": "Despondent",
+      "domain": "temperate",
+      "terrain": "mountain",
+      "distance_m": {"25": null, "50": null, "75": null, "95": null},
+      "source": {"title": "Lost Person Behavior", "author": "Robert J. Koester", "year": 2008, "table": "", "page": ""}
+    },
+    "despondent_dry_mountain": {
+      "label_ko": "자살 우려자 (건조, 산악)",
+      "isrid_category": "Despondent",
+      "domain": "dry",
+      "terrain": "mountain",
+      "distance_m": {"25": null, "50": null, "75": null, "95": null},
+      "source": {"title": "Lost Person Behavior", "author": "Robert J. Koester", "year": 2008, "table": "", "page": ""}
+    }
+  }
+}

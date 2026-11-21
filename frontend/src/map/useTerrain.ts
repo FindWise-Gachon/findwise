@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { analysisGrid } from './config'
+import { analysisGrid, region } from './config'
 import { readTerrainDocument, type TerrainDocument } from './terrainDocument'
 import { loadTerrain, saveTerrain } from './terrainStorage'
 
@@ -31,7 +31,7 @@ export function useTerrain() {
           setDocument(restored); setSavedRevision(restored.revision); setStatus('ready')
           return
         }
-        const response = await fetch(`${import.meta.env.BASE_URL}terrain/yosemite.geojson`, { signal: controller.signal })
+        const response = await fetch(`${import.meta.env.BASE_URL}terrain/${region.terrainAsset}`, { signal: controller.signal })
         if (!response.ok) throw new Error('기본 지형을 준비하지 못했습니다. 다시 시도하거나 고급 설정에서 자료를 추가해 주세요.')
         const next = readTerrainDocument(await response.json(), analysisGrid)
         if (active && request.current === token) { setDocument(next); setStatus('ready'); setMessage('기본 지형 연결됨') }
