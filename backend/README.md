@@ -107,6 +107,7 @@ allowed = can_move(access, (row, column), (next_row, next_column), allow_unknown
 | `app/radio/schema.py` | 무전 보고·이벤트 스키마 (유형, 확인 강도, 상태, JSON 변환) |
 | `app/radio/update_map.py` | 격자 정의, 이벤트 반영, 우선 수색 구역 |
 | `app/radio/extract.py` | 무전 텍스트에서 보고 유형·위치 표현·확인 강도를 추출 (규칙 기반, 승인 대기로 생성) |
+| `app/radio/evaluate.py` | 무전 시험지(`data/samples/radio-test-set.json`)로 추출 정확도를 계산 (유형별 F1, 위치·강도 정확도) |
 
 ### 반영 규칙
 
@@ -148,6 +149,8 @@ zones = top_zones(state.prob, grid, n=3)  # 우선 수색 구역 Top-3
 - 격자 값은 코드에 고정하지 않고 `GridSpec.from_dict()`/`from_json_file()`로 읽습니다.
 
 ### 테스트
+
+평가: `PYTHONPATH=backend python -m app.radio.evaluate data/samples/radio-test-set.json` (시험지는 합성 문장 초안이며 팀 검토 전입니다)
 
 ```bash
 PYTHONPATH=backend python -m unittest discover -s backend/tests
