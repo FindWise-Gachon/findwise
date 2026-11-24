@@ -1,6 +1,6 @@
 # Backend
 
-지형 전처리 CLI, 거리 기반 모델(Ring Model) CLI, 승인된 현장 보고를 확률 지도에 반영하는 모듈을 제공합니다. 로컬 Vite 개발 서버에서 Ring·ABM·승인 보고 미리보기 API를 제공합니다. 보고 텍스트의 규칙 기반 추출은 제공하며, 화면 연결과 운영용 백엔드 API는 후속 구현 범위입니다.
+지형 전처리 CLI, 거리 기반 모델(Ring Model) CLI, 승인된 현장 보고를 확률 지도에 반영하는 모듈을 제공합니다. 로컬 Vite 개발 서버에서 Ring·ABM·승인 보고 미리보기 API를 제공합니다. 보고 텍스트의 규칙 기반 추출과 위치 표현의 좌표 변환 모듈은 제공하며, 둘의 연결과 화면 연결, 운영용 백엔드 API는 후속 구현 범위입니다.
 
 
 ## 실종자 행동 ABM(논문 재현)
@@ -100,7 +100,7 @@ allowed = can_move(access, (row, column), (next_row, next_column), allow_unknown
 
 ## 현장 보고 반영 (`app/radio`)
 
-승인된 현장 이벤트를 확률 격자에 반영하는 모듈입니다. 로컬 웹에서는 `app.report_preview`로 사람이 승인한 수색 완료 보고를 현재 ABM 시점에만 반영합니다. 계산 함수는 상태를 저장하지 않으며, 웹이 승인 기록과 계산 결과를 브라우저에 함께 저장한 뒤 표시합니다. 진입 불가 보고와 구역 겹침 검토는 웹에서 기록으로 관리합니다. 보고 텍스트는 규칙 기반 추출(`app/radio/extract.py`)로 이벤트 초안을 만들 수 있으며, 결과는 항상 승인 대기 상태이고 화면 연결은 후속 범위입니다.
+승인된 현장 이벤트를 확률 격자에 반영하는 모듈입니다. 로컬 웹에서는 `app.report_preview`로 사람이 승인한 수색 완료 보고를 현재 ABM 시점에만 반영합니다. 계산 함수는 상태를 저장하지 않으며, 웹이 승인 기록과 계산 결과를 브라우저에 함께 저장한 뒤 표시합니다. 진입 불가 보고와 구역 겹침 검토는 웹에서 기록으로 관리합니다. 보고 텍스트는 규칙 기반 추출(`app/radio/extract.py`)로 이벤트 초안을 만들 수 있으며, 결과는 항상 승인 대기 상태이고 화면 연결은 후속 범위입니다. 위치 표현은 `app/radio/locate.py`가 구역명 사전이나 "여기서 북쪽 200m" 같은 상대 위치에서 좌표 후보로 바꿀 수 있지만, 아직 추출과 연결되어 있지 않습니다.
 
 | 파일 | 역할 |
 | --- | --- |
@@ -108,6 +108,7 @@ allowed = can_move(access, (row, column), (next_row, next_column), allow_unknown
 | `app/radio/update_map.py` | 격자 정의, 이벤트 반영, 우선 수색 구역 |
 | `app/radio/extract.py` | 무전 텍스트에서 보고 유형·위치 표현·확인 강도를 추출 (규칙 기반, 승인 대기로 생성) |
 | `app/radio/evaluate.py` | 무전 시험지(`data/samples/radio-test-set.json`)로 추출 정확도를 계산 (유형별 F1, 위치·강도 정확도) |
+| `app/radio/locate.py` | 위치 표현을 좌표로 변환 (구역명 사전 조회, "여기서 북쪽 200m" 같은 상대 위치 계산) |
 
 ### 반영 규칙
 
@@ -142,15 +143,36 @@ state = apply_event(state, event, grid)  # 새 MapState를 돌려줌 (입력은 
 zones = top_zones(state.prob, grid, n=3)  # 우선 수색 구역 Top-3
 ```
 
+### 위치 확정 (`locate.py`)
+
+무전 속 위치 표현을 좌표 후보로 바꿉니다. 결과는 이벤트 후보의 위치일 뿐이며 지휘관 승인 전에는 지도에 반영되지 않습니다.
+
+```python
+from app.radio.locate import Gazetteer, resolve_relative
+
+gazetteer = Gazetteer.from_json_file("data/samples/radio-gazetteer-example.json", grid)
+location, warnings = gazetteer.resolve("두 번째 갈림길 수색 완료")          # 구역명 사전
+location, warnings = resolve_relative("여기서 북쪽 200m", (x, y), grid=grid)  # 보고 대원 좌표 기준
+```
+
+- 사전은 JSON이며 항목마다 `name`, `aliases`(선택), 좌표(`x`, `y` 또는 `lon`, `lat`), `radius_m`(선택)을 적습니다. `lon`, `lat`는 격자 `crs`가 있을 때 변환합니다. 이름은 공백을 무시하고 비교하며, 겹치는 이름이나 격자 밖 좌표는 읽을 때 오류입니다.
+- 한 문장에 지명이 둘 이상이면 추측하지 않고 경고만 돌려줍니다.
+- 상대 위치는 기준 좌표가 없으면 계산하지 않습니다. 기준을 말하지 않은 표현("북쪽 200m")은 보고 대원 위치로 가정한다는 경고를 붙입니다. 거리가 0 이하이거나 5 km를 넘으면 반영하지 않습니다. 숫자는 아라비아 숫자만 읽습니다.
+- `data/samples/radio-gazetteer-example.json`의 좌표는 임의 값이며 실제 지명의 위치가 아닙니다.
+- 명령줄: `PYTHONPATH=backend python -m app.radio.locate "여기서 북쪽 200m" --reference 270000 4182000`
+
 ### 격자 규약
 
 - 좌표는 격자와 같은 투영좌표(m)이며, `origin`은 북서쪽 모서리입니다.
 - 배열은 북→남 행 순서, 각 행은 서→동입니다. 인덱스는 `row * columns + column`입니다.
 - 격자 값은 코드에 고정하지 않고 `GridSpec.from_dict()`/`from_json_file()`로 읽습니다.
 
-### 테스트
+### 평가
 
 평가: `PYTHONPATH=backend python -m app.radio.evaluate data/samples/radio-test-set.json` (시험지는 합성 문장 초안이며 팀 검토 전입니다)
+위치 확정 모듈이 아직 추출과 연결되어 있지 않아, 시험지의 상대 위치·고유 지명 문항은 틀리는 것이 현재 정상입니다.
+
+### 테스트
 
 ```bash
 PYTHONPATH=backend python -m unittest discover -s backend/tests
