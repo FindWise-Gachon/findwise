@@ -169,7 +169,8 @@ location, warnings = resolve_relative("여기서 북쪽 200m", (x, y), grid=grid
 
 ### 평가
 
-평가: `PYTHONPATH=backend python -m app.radio.evaluate data/samples/radio-test-set.json` (시험지는 합성 문장 초안이며 팀 검토 전입니다)
+`PYTHONPATH=backend python -m app.radio.evaluate data/samples/radio-test-set.json`로 추출 정확도를 계산합니다. 시험지는 합성 문장 초안이며 팀 검토 전입니다.
+
 위치 확정 모듈이 아직 추출과 연결되어 있지 않아, 시험지의 상대 위치·고유 지명 문항은 틀리는 것이 현재 정상입니다.
 
 ### 테스트
