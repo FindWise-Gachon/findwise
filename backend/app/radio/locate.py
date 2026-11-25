@@ -56,6 +56,7 @@ class RelativeOffset:
     direction: str       # 북, 북동, ...
     distance_m: float
     has_reference: bool  # '여기서' 처럼 기준을 말했는지
+    span: tuple[int, int] = (0, 0)  # 원문에서 표현이 차지하는 [시작, 끝) 위치
 
 
 def offset_point(x: float, y: float, direction: str, distance_m: float) -> tuple[float, float]:
@@ -74,7 +75,7 @@ def parse_relative(text: str) -> Optional[RelativeOffset]:
             distance = float(found.group("num")) * _UNIT_M[found.group("unit").lower()]
             return RelativeOffset(text=re.sub(r"\s+", " ", found.group(0)).strip(),
                                   direction=found.group("dir"), distance_m=distance,
-                                  has_reference=found.group("ref") is not None)
+                                  has_reference=found.group("ref") is not None, span=found.span())
     return None
 
 

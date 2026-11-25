@@ -5,8 +5,10 @@
 import json
 import unittest
 
-from app.radio.extract import classify, extract_report, find_location
+from app.radio.extract import classify, extract_report, find_location, main
+from app.radio.locate import Gazetteer
 from app.radio.schema import Confidence, EventType, RadioReport, Status
+from app.radio.update_map import GridSpec
 
 
 def one(text):
@@ -129,6 +131,85 @@ class ReportShapeTest(unittest.TestCase):
     def test_unclassified_text_is_log_only(self):
         result, events = one("지금 점심 먹고 있습니다")
         self.assertEqual((events, result.report.status), ([], Status.LOG_ONLY))
+
+
+class ExtractLocateTest(unittest.TestCase):
+    """위치 확정(locate)과의 연결: 사전·기준 좌표를 주면 좌표를 채우고, 아니면 표현만 남긴다."""
+
+    GRID = GridSpec(x0=268800.0, y0=4183680.0, cell_m=6.0, rows=1000, cols=1000, crs="EPSG:32611")
+    REF = (270000.0, 4182000.0)
+
+    def gazetteer(self, *places):
+        return Gazetteer.from_dict({"places": list(places)})
+
+    def location_of(self, text, **kwargs):
+        result = extract_report(text, "r", **kwargs)
+        return result.report.events[0].location, result.warnings
+
+    def test_place_name_gets_coordinates(self):
+        gazetteer = self.gazetteer({"name": "두 번째 갈림길", "x": 270000, "y": 4182000, "radius_m": 150})
+        location, warnings = self.location_of("두 번째 갈림길 수색 완료", gazetteer=gazetteer)
+        self.assertEqual((location.kind, location.value, location.x, location.y, location.radius_m),
+                         ("지명", "두 번째 갈림길", 270000.0, 4182000.0, 150.0))
+        self.assertEqual(warnings, ())
+
+    def test_place_name_without_gazetteer_is_not_resolved(self):
+        location, _ = self.location_of("두 번째 갈림길 수색 완료")
+        self.assertFalse(location.resolved)
+        self.assertEqual(location.value, "")
+
+    def test_relative_with_reference_gets_coordinates(self):
+        location, warnings = self.location_of("여기서 북쪽 200m 수색 완료", reference_xy=self.REF)
+        self.assertEqual((location.kind, location.value), ("상대위치", "여기서 북쪽 200m"))
+        self.assertAlmostEqual(location.x, 270000.0)
+        self.assertAlmostEqual(location.y, 4182200.0)
+        self.assertEqual(warnings, ())
+
+    def test_relative_without_reference_keeps_expression_and_warns(self):
+        location, warnings = self.location_of("여기서 북쪽 200m 수색 완료")
+        self.assertEqual((location.kind, location.value, location.resolved), ("상대위치", "여기서 북쪽 200m", False))
+        self.assertTrue(any("기준 위치" in w for w in warnings))
+
+    def test_relative_without_base_but_landmark_is_not_guessed(self):
+        # '동쪽 계곡에서 북쪽 200m'는 보고 대원이 아니라 계곡이 기준일 수 있으므로 계산하지 않는다
+        location, warnings = self.location_of("동쪽 계곡에서 북쪽 200m 수색 완료", reference_xy=self.REF)
+        self.assertEqual((location.value, location.resolved), ("동쪽 계곡", False))
+        self.assertTrue(any("기준 지점이 불분명" in w for w in warnings))
+
+    def test_relative_without_base_and_without_landmark_uses_reporter(self):
+        location, warnings = self.location_of("북쪽 200m 수색 완료", reference_xy=self.REF)
+        self.assertTrue(location.resolved)
+        self.assertTrue(any("가정" in w for w in warnings))
+
+    def test_relative_outside_grid_is_not_resolved(self):
+        location, warnings = self.location_of("여기서 동쪽 5km 수색 완료", reference_xy=self.REF, grid=self.GRID)
+        self.assertEqual((location.value, location.resolved), ("여기서 동쪽 5km", False))
+        self.assertTrue(any("격자 밖" in w for w in warnings))
+
+    def test_two_places_fall_back_to_expression_with_warning(self):
+        gazetteer = self.gazetteer({"name": "동쪽 주차장", "x": 1, "y": 1}, {"name": "두 번째 갈림길", "x": 2, "y": 2})
+        result = extract_report("동쪽 주차장 근처 두 번째 갈림길 수색 완료", "r", gazetteer=gazetteer)
+        self.assertEqual(len(result.report.events), 1)  # 이벤트는 만들고 위치만 비운다
+        self.assertFalse(result.report.events[0].location.resolved)
+        self.assertTrue(any("여러 개" in w for w in result.warnings))
+
+    def test_without_options_matches_previous_behavior(self):
+        location, warnings = self.location_of("동쪽 계곡 수색 완료")
+        self.assertEqual((location.kind, location.value, location.resolved), ("지명", "동쪽 계곡", False))
+        self.assertEqual(warnings, ())
+
+    def test_command_line_options(self):
+        import io
+        from contextlib import redirect_stdout
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            main(["여기서 북쪽 200m 수색 완료", "--reference", "270000", "4182000"])
+        event = json.loads(buffer.getvalue())["report"]["events"][0]
+        self.assertAlmostEqual(event["location"]["y"], 4182200.0)
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            main(["수색 완료", "--gazetteer", "/없는/파일.json"])
+        self.assertIn("error", json.loads(buffer.getvalue()))
 
 
 if __name__ == "__main__":

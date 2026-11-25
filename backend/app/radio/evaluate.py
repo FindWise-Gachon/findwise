@@ -25,7 +25,9 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .extract import extract_report
+from .locate import Gazetteer
 from .schema import Confidence, EventType
+from .update_map import GridSpec
 
 TYPES = [t.value for t in EventType]
 CONFIDENCES = [c.value for c in Confidence]
@@ -36,14 +38,25 @@ Predicted = list[dict]
 Predictor = Callable[[str], Predicted]
 
 
-def rule_based_predictor(text: str) -> Predicted:
-    """규칙 기반 extract_report를 시험지 비교용 형태로 바꾼다."""
-    try:
-        extraction = extract_report(text, report_id="eval")
-    except ValueError:
-        return []
-    return [{"type": e.type.value, "location": e.location.value, "confidence": e.confidence.value}
-            for e in extraction.report.events]
+def make_predictor(gazetteer: Optional[Gazetteer] = None, reference_xy: Optional[tuple[float, float]] = None,
+                   grid: Optional[GridSpec] = None) -> Predictor:
+    """규칙 기반 extract_report를 시험지 비교용 형태로 바꾼다. 사전·기준 좌표를 주면 위치 확정까지 포함해 잰다."""
+    def predict(text: str) -> Predicted:
+        try:
+            extraction = extract_report(text, report_id="eval", gazetteer=gazetteer,
+                                        reference_xy=reference_xy, grid=grid)
+        except ValueError:
+            return []
+        return [{"type": e.type.value, "location": e.location.value, "confidence": e.confidence.value}
+                for e in extraction.report.events]
+    return predict
+
+
+rule_based_predictor = make_predictor()  # 사전·기준 좌표 없이 (표현만 추출)
+
+
+def sha256_file(path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 # ---- 시험지 읽기 ---------------------------------------------------------
@@ -184,10 +197,12 @@ def _ratio(part: dict) -> str:
     return f"{part['correct']}/{part['n']}" + (f" ({part['correct'] / part['n'] * 100:.1f}%)" if part["n"] else "")
 
 
-def format_report(result: dict, sha256: str = "", path: str = "") -> str:
+def format_report(result: dict, sha256: str = "", path: str = "", settings: str = "") -> str:
     lines = [f"무전 시험지 평가 · 문항 {result['n_cases']}개"]
     if path or sha256:
         lines.append(f"시험지: {path}  SHA-256 {sha256}")
+    if settings:
+        lines.append(f"설정: {settings}")
     lines += ["", "[유형 분류]  정밀도  재현율     F1   (TP/FP/FN)"]
     for t, v in result["types"].items():
         lines.append(f"  {t:<8}{_pct(v['precision'])} {_pct(v['recall'])} {_pct(v['f1'])}   ({v['tp']}/{v['fp']}/{v['fn']})")
@@ -220,13 +235,27 @@ def main(argv: Optional[list[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="무전 시험지로 구조화 정확도를 잰다")
     parser.add_argument("test_set", help="시험지 JSON 경로")
     parser.add_argument("--json", action="store_true", help="결과를 JSON으로 출력")
+    parser.add_argument("--gazetteer", help="구역명 사전 JSON (위치 확정까지 포함해 잰다)")
+    parser.add_argument("--grid", help="격자 JSON (사전 좌표 검사와 lon/lat 변환에 사용)")
+    parser.add_argument("--reference", nargs=2, type=float, metavar=("X", "Y"), help="보고 대원의 투영좌표")
     args = parser.parse_args(argv)
+    grid = GridSpec.from_json_file(args.grid) if args.grid else None
+    gazetteer = Gazetteer.from_json_file(args.gazetteer, grid) if args.gazetteer else None
+    reference = tuple(args.reference) if args.reference else None
     cases, digest = load_test_set(args.test_set)
-    result = score(cases)
+    result = score(cases, make_predictor(gazetteer, reference, grid))
+    settings = []
+    if args.gazetteer:
+        settings.append(f"구역명 사전 {args.gazetteer} (SHA-256 {sha256_file(args.gazetteer)})")
+    if args.grid:
+        settings.append(f"격자 {args.grid}")
+    if reference:
+        settings.append(f"기준 좌표 {reference[0]:g}, {reference[1]:g}")
     if args.json:
-        print(json.dumps({"test_set": args.test_set, "sha256": digest, **result}, ensure_ascii=False, indent=2))
+        print(json.dumps({"test_set": args.test_set, "sha256": digest, "settings": settings, **result},
+                         ensure_ascii=False, indent=2))
     else:
-        print(format_report(result, digest, args.test_set))
+        print(format_report(result, digest, args.test_set, "; ".join(settings) or "사전·기준 좌표 없음"))
 
 
 if __name__ == "__main__":

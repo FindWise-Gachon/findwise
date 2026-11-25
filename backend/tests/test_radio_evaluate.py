@@ -8,9 +8,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.radio.evaluate import format_report, load_test_set, rule_based_predictor, score
+from app.radio.evaluate import format_report, load_test_set, make_predictor, rule_based_predictor, score
+from app.radio.locate import Gazetteer
 
-SAMPLE = Path(__file__).resolve().parents[2] / "data" / "samples" / "radio-test-set.json"
+SAMPLES = Path(__file__).resolve().parents[2] / "data" / "samples"
+SAMPLE = SAMPLES / "radio-test-set.json"
+GAZETTEER = SAMPLES / "radio-gazetteer-example.json"
 
 
 def case(cid, expected, tags=(), text="문장"):
@@ -110,6 +113,24 @@ class SampleSetTest(unittest.TestCase):
         self.assertEqual(result["n_cases"], len(cases))
         for value in (result["micro_f1"], result["macro_f1"]):
             self.assertTrue(0.0 <= value <= 1.0)
+
+
+class PredictorSettingsTest(unittest.TestCase):
+    def test_relative_expression_is_found_without_gazetteer(self):
+        cases = [case("a", [event("수색 완료", "여기서 북쪽 200m")], text="여기서 북쪽 200m 지점 수색 완료.")]
+        self.assertEqual(score(cases, rule_based_predictor)["failures"], [])
+
+    def test_gazetteer_makes_place_names_match(self):
+        cases = [case("a", [event("수색 완료", "두 번째 갈림길")], text="두 번째 갈림길 수색 완료.")]
+        self.assertEqual(len(score(cases, rule_based_predictor)["failures"]), 1)  # 사전 없이는 위치를 못 찾는다
+        predictor = make_predictor(gazetteer=Gazetteer.from_json_file(GAZETTEER))
+        self.assertEqual(score(cases, predictor)["failures"], [])
+
+    def test_sample_set_location_cases_with_gazetteer(self):
+        cases, _ = load_test_set(SAMPLE)
+        predictor = make_predictor(gazetteer=Gazetteer.from_json_file(GAZETTEER))
+        failed = {f["id"] for f in score(cases, predictor)["failures"]}
+        self.assertFalse({"c028", "c029", "c030"} & failed)
 
 
 if __name__ == "__main__":

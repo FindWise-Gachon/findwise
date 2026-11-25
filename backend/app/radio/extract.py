@@ -3,8 +3,9 @@
 프로토타입(index.html의 parseReport) 규칙을 모듈로 옮기고 아래를 보완했다.
   - 부정 표현 처리: "발견하지 못했다"는 흔적 발견이 아니라 수색 완료(미발견), "위험은 없다"는 위험 요소가 아니다
   - 여러 문장이면 문장마다 이벤트 후보를 만든다 (쉼표로는 나누지 않는다)
-  - 위치 표현을 문자열로 뽑는다 (예: "동쪽 계곡"). 좌표(x, y)는 정하지 않는다
-    → 지도 클릭이나 구역 사전(locate)이 정하고, 없으면 승인해도 지도에 반영되지 않고 기록만 남는다
+  - 위치 표현을 문자열로 뽑는다 (예: "동쪽 계곡"). 좌표(x, y)는 구역명 사전이나 보고 대원의 기준 좌표를 넘겼을 때만
+    locate가 채운다(지명 하나, 또는 '여기서 북쪽 200m'). 그 밖에는 좌표 없이 표현만 남기고, 좌표가 없으면
+    승인해도 지도에 반영되지 않고 기록만 남는다 (지도 클릭으로 지정)
   - 분류하지 못한 보고는 이벤트를 만들지 않고 '기록만'으로 둔다
 
 이 모듈은 AI가 아니며, 결과는 모두 '승인 대기'다. 지휘관이 유형·위치·확인 강도를 확인하고 고친 뒤에만
@@ -12,9 +13,12 @@
 
 명령줄(개발용 미리보기에서 호출할 때):
     PYTHONPATH=backend python -m app.radio.extract "동쪽 계곡 수색 완료, 아무것도 없습니다."
+    PYTHONPATH=backend python -m app.radio.extract "여기서 북쪽 200m 수색 완료" --reference 270000 4182000
+    PYTHONPATH=backend python -m app.radio.extract "두 번째 갈림길 수색 완료" --gazetteer data/samples/radio-gazetteer-example.json
 """
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -22,7 +26,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
+from .locate import Gazetteer, parse_relative, resolve_relative
 from .schema import Confidence, EventType, FieldEvent, Location, RadioReport, Status
+from .update_map import GridSpec
 
 # ---- 위치 표현 ---------------------------------------------------------
 _B = r"(?<![가-힣A-Za-z0-9])"  # 단어 시작 (예: '에서'의 '서'를 방향으로 읽지 않기 위해)
@@ -92,6 +98,34 @@ def find_location(sentence: str) -> Location:
     return Location(kind="지명", value="")
 
 
+def locate_sentence(sentence: str, gazetteer: Optional[Gazetteer] = None,
+                    reference_xy: Optional[tuple[float, float]] = None,
+                    grid: Optional[GridSpec] = None) -> tuple[Location, list[str]]:
+    """한 문장의 위치를 (Location, 경고)로 정한다. 좌표를 못 정해도 위치 표현은 남긴다.
+
+    우선순위: 구역명 사전의 지명 > '여기서 북쪽 200m' 같은 상대 위치 > 방향+지형 단어.
+    기준을 말하지 않은 상대 위치("동쪽 계곡에서 북쪽 200m")는 어디서부터인지 알 수 없어 계산하지 않는다.
+    """
+    warnings: list[str] = []
+    place = None
+    if gazetteer is not None:
+        place, place_warnings = gazetteer.resolve(sentence)
+        warnings += place_warnings
+    relative = parse_relative(sentence)
+    if relative is None:
+        return (place if place is not None else find_location(sentence)), warnings
+
+    start, end = relative.span
+    landmark = place if place is not None else find_location(sentence[:start] + " " + sentence[end:])
+    if relative.has_reference or not landmark.value:
+        # 기준을 말했거나, 기준이 될 만한 다른 위치가 없으면 보고 대원 위치에서 계산한다
+        location, relative_warnings = resolve_relative(sentence, reference_xy, grid=grid)
+        warnings += relative_warnings
+        return (location if location is not None else Location(kind="상대위치", value=relative.text)), warnings
+    warnings.append(f"'{relative.text}'는 기준 지점이 불분명해 계산하지 않았습니다. 지도에서 위치를 지정해 주세요")
+    return landmark, warnings
+
+
 def find_confidence(sentence: str) -> Confidence:
     if _THOROUGH.search(sentence):
         return Confidence.THOROUGH
@@ -101,8 +135,13 @@ def find_confidence(sentence: str) -> Confidence:
 
 
 def extract_report(text: str, report_id: str, reporter: str = "",
-                   time: Optional[str] = None) -> Extraction:
-    """무전 텍스트를 RadioReport(이벤트 후보)로 구조화한다."""
+                   time: Optional[str] = None, *, gazetteer: Optional[Gazetteer] = None,
+                   reference_xy: Optional[tuple[float, float]] = None,
+                   grid: Optional[GridSpec] = None) -> Extraction:
+    """무전 텍스트를 RadioReport(이벤트 후보)로 구조화한다.
+
+    gazetteer, reference_xy(보고 대원의 투영좌표), grid를 주면 위치 좌표도 가능한 만큼 채운다(locate_sentence).
+    """
     raw = (text or "").strip()
     if not raw:
         raise ValueError("보고 내용이 비어 있습니다")
@@ -117,7 +156,8 @@ def extract_report(text: str, report_id: str, reporter: str = "",
             warnings.append(f"유형을 판단하지 못한 문장: '{sentence}'")
             continue
         kind, rule = result
-        location = find_location(sentence)
+        location, location_warnings = locate_sentence(sentence, gazetteer, reference_xy, grid)
+        warnings += location_warnings
         # 위치 없이 '아무것도 없다'만 말한 문장은 바로 앞 수색 완료 이벤트의 설명으로 붙인다
         if (rule == "not_found" and not location.value and events
                 and events[-1].type == EventType.SEARCHED):
@@ -142,11 +182,19 @@ def extract_report(text: str, report_id: str, reporter: str = "",
 
 
 def main(argv: Optional[list[str]] = None) -> None:
-    args = sys.argv[1:] if argv is None else argv
-    text = " ".join(args) if args else sys.stdin.read()
+    parser = argparse.ArgumentParser(description="무전 텍스트를 이벤트 후보로 구조화한다")
+    parser.add_argument("text", nargs="*", help="무전 문장 (없으면 표준입력)")
+    parser.add_argument("--gazetteer", help="구역명 사전 JSON")
+    parser.add_argument("--grid", help="격자 JSON (사전 좌표 검사, lon/lat 변환, 상대 위치의 격자 밖 검사)")
+    parser.add_argument("--reference", nargs=2, type=float, metavar=("X", "Y"), help="보고 대원의 투영좌표")
+    args = parser.parse_args(argv)
+    text = " ".join(args.text) if args.text else sys.stdin.read()
     try:
-        output = extract_report(text, report_id="preview").to_dict()
-    except ValueError as error:
+        grid = GridSpec.from_json_file(args.grid) if args.grid else None
+        gazetteer = Gazetteer.from_json_file(args.gazetteer, grid) if args.gazetteer else None
+        output = extract_report(text, report_id="preview", gazetteer=gazetteer, grid=grid,
+                                reference_xy=tuple(args.reference) if args.reference else None).to_dict()
+    except (ValueError, OSError) as error:
         output = {"error": str(error)}
     print(json.dumps(output, ensure_ascii=False))
 
