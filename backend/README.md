@@ -1,6 +1,6 @@
 # Backend
 
-지형 전처리 CLI, 거리 기반 모델(Ring Model) CLI, 승인된 현장 보고를 확률 지도에 반영하는 모듈을 제공합니다. 로컬 Vite 개발 서버에서 Ring·ABM·승인 보고 미리보기 API를 제공합니다. 보고 텍스트의 규칙 기반 추출과 위치 표현의 좌표 변환 모듈을 제공하며, 둘은 연결되어 있습니다. 화면 연결과 운영용 백엔드 API는 후속 구현 범위입니다.
+지형 전처리 CLI, 거리 기반 모델(Ring Model) CLI, 승인된 현장 보고를 확률 지도에 반영하는 모듈을 제공합니다. 로컬 Vite 개발 서버에서 Ring·ABM·승인 보고 미리보기 API를 제공합니다. 보고 텍스트의 규칙 기반 추출과 위치 표현의 좌표 변환 모듈을 제공하며, 둘은 연결되어 있습니다. 지휘관 승인 처리와 해시 체인 이력 저장, 반영 전후 비교 실험 모듈도 있습니다. 화면 연결과 운영용 백엔드 API는 후속 구현 범위입니다.
 
 
 ## 실종자 행동 ABM(논문 재현)
@@ -109,6 +109,10 @@ allowed = can_move(access, (row, column), (next_row, next_column), allow_unknown
 | `app/radio/extract.py` | 무전 텍스트에서 보고 유형·위치 표현·확인 강도를 추출 (규칙 기반, 승인 대기로 생성) |
 | `app/radio/evaluate.py` | 무전 시험지(`data/samples/radio-test-set.json`)로 추출 정확도를 계산 (유형별 F1, 위치·강도 정확도) |
 | `app/radio/locate.py` | 위치 표현을 좌표로 변환 (구역명 사전 조회, "여기서 북쪽 200m" 같은 상대 위치 계산) |
+| `app/radio/simulate.py` | 무전 반영 전후 비교 실험 (합성 시나리오) |
+| `app/radio/review.py` | 지휘관 승인·수정 후 승인·거절 상태 전이 |
+| `app/radio/history.py` | 추가 전용 이력(해시 체인)과 이력으로 지도 상태 복원 |
+| `app/radio/workflow.py` | 접수 → 승인 처리 → 지도 반영 → 이력 기록을 묶는 함수 |
 
 ### 반영 규칙
 
@@ -142,6 +146,33 @@ event = FieldEvent(
 state = apply_event(state, event, grid)  # 새 MapState를 돌려줌 (입력은 바뀌지 않음)
 zones = top_zones(state.prob, grid, n=3)  # 우선 수색 구역 Top-3
 ```
+
+### 승인과 이력 저장
+
+화면과 API는 아직 연결하지 않았고, 백엔드 로직만 있습니다.
+
+- 승인(`review.py`): 승인 / 수정 후 승인 / 거절. 이미 처리된 이벤트는 다시 처리할 수 없고, 처리자가 필수입니다.
+  수정할 수 있는 항목은 유형, 확인 강도, 메모, 위치뿐입니다.
+- 이력(`history.py`): 항목마다 직전 항목의 SHA-256 해시를 포함하는 추가 전용 기록입니다.
+  중간 항목을 고치거나 빼면 `verify()`가 찾아냅니다. 메모리와 JSON Lines 파일 저장소가 있습니다.
+- 연결(`workflow.py`): `decide()`는 지도 계산과 검증을 먼저 끝낸 뒤 이력을 쓰므로, 오류가 나면 이력도 지도도 바뀌지 않습니다.
+
+```python
+from app.radio.history import JsonlHistory, replay
+from app.radio.review import APPROVE
+from app.radio.update_map import new_state
+from app.radio.workflow import decide, receive_report
+
+store = JsonlHistory("data/processed/radio-history.jsonl")
+receive_report(store, report)
+state = new_state(prior)
+for event in report.events:
+    state, after = decide(state, store, grid, event, APPROVE, "지휘관A")
+
+state = replay(prior, grid, store.entries())  # 이력만으로 지도 상태 복원
+```
+
+이력 파일은 `data/processed/` 아래에 두면 저장소에 포함되지 않습니다.
 
 ### 위치 확정 (`locate.py`)
 
@@ -177,6 +208,18 @@ result = extract_report("여기서 북쪽 200m 수색 완료", "r1", gazetteer=g
 `PYTHONPATH=backend python -m app.radio.evaluate data/samples/radio-test-set.json`로 추출 정확도를 계산합니다. 시험지는 합성 문장 초안이며 팀 검토 전입니다.
 
 시험지의 고유 지명 문항은 `--gazetteer`로 구역명 사전을 주면 위치 확정까지 포함해 잽니다(`--grid`, `--reference`도 받습니다). 사전 없이는 틀립니다. 예시 사전에는 시험지의 지명이 들어 있어 메커니즘 확인용이며, 정확도 평가에는 쓰지 마세요.
+
+#### 무전 반영 전후 비교 (합성 시나리오)
+
+```bash
+PYTHONPATH=backend python -m app.radio.simulate
+PYTHONPATH=backend python -m app.radio.simulate --sweep pod-scale 1.0,0.7,0.5
+PYTHONPATH=backend python -m app.radio.simulate --sweep location-error 0,100,300
+```
+
+무전을 반영하지 않을 때, 수색한 영역을 통째로 지울 때, 현재 규칙(확률 보정)으로 반영할 때를 같은 실종자 위치와 같은 난수로 비교합니다.
+지도가 정확하고 실종자가 지도 분포에서 나온다고 가정한 합성 시나리오이므로 현장 성능의 증거가 아닙니다.
+`--prior-npz`로 외부 확률 파일을 쓰면 파일의 SHA-256을 출력에 함께 기록합니다.
 
 ### 테스트
 
