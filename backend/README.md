@@ -1,6 +1,6 @@
 # Backend
 
-지형 전처리 CLI, 거리 기반 모델(Ring Model) CLI, 승인된 현장 보고를 확률 지도에 반영하는 모듈을 제공합니다. 로컬 Vite 개발 서버에서 Ring·ABM·승인 보고 미리보기 API를 제공합니다. 보고 텍스트 구조화와 운영용 백엔드 API는 후속 구현 범위입니다.
+지형 전처리 CLI, 거리 기반 모델(Ring Model) CLI, 승인된 현장 보고를 확률 지도에 반영하는 모듈을 제공합니다. 로컬 Vite 개발 서버에서 Ring·ABM·승인 보고 미리보기 API를 제공합니다. 보고 텍스트의 규칙 기반 추출과 위치 표현의 좌표 변환 모듈을 제공하며, 둘은 연결되어 있습니다. 지휘관 승인 처리와 해시 체인 이력 저장, 반영 전후 비교 실험 모듈도 있습니다. 화면 연결과 운영용 백엔드 API는 후속 구현 범위입니다.
 
 
 ## 실종자 행동 ABM(논문 재현)
@@ -100,25 +100,33 @@ allowed = can_move(access, (row, column), (next_row, next_column), allow_unknown
 
 ## 현장 보고 반영 (`app/radio`)
 
-승인된 현장 이벤트를 확률 격자에 반영하는 모듈입니다. 로컬 웹에서는 `app.report_preview`로 사람이 승인한 수색 완료 보고를 현재 ABM 시점에만 반영합니다. 계산 함수는 상태를 저장하지 않으며, 웹이 승인 기록과 계산 결과를 브라우저에 함께 저장한 뒤 표시합니다. 진입 불가 보고와 구역 겹침 검토는 웹에서 기록으로 관리합니다. 보고 텍스트 구조화는 후속 범위입니다.
+승인된 현장 이벤트를 확률 격자에 반영하는 모듈입니다. 로컬 웹에서는 `app.report_preview`로 사람이 승인한 수색 완료 보고를 현재 ABM 시점에만 반영합니다. 계산 함수는 상태를 저장하지 않으며, 웹이 승인 기록과 계산 결과를 브라우저에 함께 저장한 뒤 표시합니다. 진입 불가 보고와 구역 겹침 검토는 웹에서 기록으로 관리합니다. 보고 텍스트는 규칙 기반 추출(`app/radio/extract.py`)로 이벤트 초안을 만들 수 있으며, 결과는 항상 승인 대기 상태이고 화면 연결은 후속 범위입니다. 위치 표현은 `app/radio/locate.py`가 구역명 사전이나 "여기서 북쪽 200m" 같은 상대 위치에서 좌표 후보로 바꿉니다. `extract_report`에 사전과 기준 좌표를 넘기면 추출 결과의 위치에도 좌표를 채웁니다.
 
 | 파일 | 역할 |
 | --- | --- |
 | `app/radio/schema.py` | 무전 보고·이벤트 스키마 (유형, 확인 강도, 상태, JSON 변환) |
 | `app/radio/update_map.py` | 격자 정의, 이벤트 반영, 우선 수색 구역 |
+| `app/radio/extract.py` | 무전 텍스트에서 보고 유형·위치 표현·확인 강도를 추출 (규칙 기반, 승인 대기로 생성) |
+| `app/radio/evaluate.py` | 무전 시험지(`data/samples/radio-test-set.json`)로 추출 정확도를 계산 (유형별 F1, 위치·강도 정확도) |
+| `app/radio/locate.py` | 위치 표현을 좌표로 변환 (구역명 사전 조회, "여기서 북쪽 200m" 같은 상대 위치 계산) |
+| `app/radio/simulate.py` | 무전 반영 전후 비교 실험 (합성 시나리오) |
+| `app/radio/review.py` | 지휘관 승인·수정 후 승인·거절 상태 전이 |
+| `app/radio/history.py` | 추가 전용 이력(해시 체인)과 이력으로 지도 상태 복원 |
+| `app/radio/workflow.py` | 접수 → 승인 처리 → 지도 반영 → 이력 기록을 묶는 함수 |
+| `app/radio/soniox_probe.py` | 녹음 → Soniox 변환 → 추출까지 출력 형식을 점검하는 개발 도구 (운영 연동 아님) |
 
 ### 반영 규칙
 
 | 이벤트 | 지도 변화 |
 | --- | --- |
 | 수색 완료 | 영역 셀 × (1 − POD) 후 정규화. 확률이 0이 되지 않음(POD 상한 0.95) |
-| 흔적 발견 | 발견 지점 주변 가중치 증가 후 정규화 |
+| 흔적 발견 | 확률 일부(`weight`)를 발견 지점 주변 가우시안으로 옮김. 확률 0인 셀도 올라감 |
 | 진입 불가·위험 요소 | 확률은 유지하고 표식만 추가 |
 
 - 승인 또는 수정 후 승인 상태의 이벤트만 반영합니다. 승인 대기·거절은 이력만 남깁니다.
 - 같은 `event_id`는 한 번만 반영합니다.
 - 위치(좌표·영역)를 알 수 없으면 반영하지 않고 이력에 사유를 남깁니다.
-- POD(꼼꼼히 0.8 / 보통 0.5 / 대충 0.3)와 흔적 파라미터(반경 300 m, 배율 3.0)는 임시 값입니다.
+- POD(꼼꼼히 0.8 / 보통 0.5 / 대충 0.3)와 흔적 파라미터(반경 300 m, 이동 비율 0.3)는 임시 값입니다.
 - 진입 불가·위험 요소 표식은 위의 통행 조건(`access`)과 아직 연결되어 있지 않습니다. 모델의 이동 제한에는 쓰이지 않습니다.
 
 ### 사용 예
@@ -140,11 +148,99 @@ state = apply_event(state, event, grid)  # 새 MapState를 돌려줌 (입력은 
 zones = top_zones(state.prob, grid, n=3)  # 우선 수색 구역 Top-3
 ```
 
+### 승인과 이력 저장
+
+화면과 API는 아직 연결하지 않았고, 백엔드 로직만 있습니다.
+
+- 승인(`review.py`): 승인 / 수정 후 승인 / 거절. 이미 처리된 이벤트는 다시 처리할 수 없고, 처리자가 필수입니다.
+  수정할 수 있는 항목은 유형, 확인 강도, 메모, 위치뿐입니다.
+- 이력(`history.py`): 항목마다 직전 항목의 SHA-256 해시를 포함하는 추가 전용 기록입니다.
+  중간 항목을 고치거나 빼면 `verify()`가 찾아냅니다. 메모리와 JSON Lines 파일 저장소가 있습니다.
+- 연결(`workflow.py`): `decide()`는 지도 계산과 검증을 먼저 끝낸 뒤 이력을 쓰므로, 오류가 나면 이력도 지도도 바뀌지 않습니다.
+
+```python
+from app.radio.history import JsonlHistory, replay
+from app.radio.review import APPROVE
+from app.radio.update_map import new_state
+from app.radio.workflow import decide, receive_report
+
+store = JsonlHistory("data/processed/radio-history.jsonl")
+receive_report(store, report)
+state = new_state(prior)
+for event in report.events:
+    state, after = decide(state, store, grid, event, APPROVE, "지휘관A")
+
+state = replay(prior, grid, store.entries())  # 이력만으로 지도 상태 복원
+```
+
+이력 파일은 `data/processed/` 아래에 두면 저장소에 포함되지 않습니다.
+
+### 위치 확정 (`locate.py`)
+
+무전 속 위치 표현을 좌표 후보로 바꿉니다. 결과는 이벤트 후보의 위치일 뿐이며 지휘관 승인 전에는 지도에 반영되지 않습니다.
+
+```python
+from app.radio.locate import Gazetteer, resolve_relative
+
+gazetteer = Gazetteer.from_json_file("data/samples/radio-gazetteer-example.json", grid)
+location, warnings = gazetteer.resolve("두 번째 갈림길 수색 완료")          # 구역명 사전
+location, warnings = resolve_relative("여기서 북쪽 200m", (x, y), grid=grid)  # 보고 대원 좌표 기준
+
+from app.radio.extract import extract_report
+
+result = extract_report("여기서 북쪽 200m 수색 완료", "r1", gazetteer=gazetteer, reference_xy=(x, y), grid=grid)
+```
+
+- 사전은 JSON이며 항목마다 `name`, `aliases`(선택), 좌표(`x`, `y` 또는 `lon`, `lat`), `radius_m`(선택)을 적습니다. `lon`, `lat`는 격자 `crs`가 있을 때 변환합니다. 이름은 공백을 무시하고 비교하며, 겹치는 이름이나 격자 밖 좌표는 읽을 때 오류입니다.
+- 한 문장에 지명이 둘 이상이면 추측하지 않고 경고만 돌려줍니다.
+- 상대 위치는 기준 좌표가 없으면 계산하지 않습니다. 기준을 말하지 않은 표현("북쪽 200m")은 보고 대원 위치로 가정한다는 경고를 붙입니다. 거리가 0 이하이거나 5 km를 넘으면 반영하지 않습니다. 숫자는 아라비아 숫자만 읽습니다. Soniox 변환 결과는 "200 m", "1.5 km"처럼 숫자와 단위 사이가 띄어져 나오는데 그대로 읽습니다. 소수점이 있는 거리도 한 문장으로 처리합니다.
+- `extract_report`는 사전 지명 뒤에 "에서/부터/기준"이 붙은 상대 위치("두 번째 갈림길에서 북쪽 200m")를 그 지명의 좌표에서 계산합니다. 조사 없이 지명과 함께 나온 상대 위치("동쪽 계곡 근처 북쪽 200m")나 지명이 둘 이상인 경우는 기준이 불분명해 계산하지 않고 경고합니다.
+- `data/samples/radio-gazetteer-example.json`의 좌표는 임의 값이며 실제 지명의 위치가 아닙니다.
+- 명령줄: `PYTHONPATH=backend python -m app.radio.locate "여기서 북쪽 200m" --reference 270000 4182000`
+
 ### 격자 규약
 
 - 좌표는 격자와 같은 투영좌표(m)이며, `origin`은 북서쪽 모서리입니다.
 - 배열은 북→남 행 순서, 각 행은 서→동입니다. 인덱스는 `row * columns + column`입니다.
 - 격자 값은 코드에 고정하지 않고 `GridSpec.from_dict()`/`from_json_file()`로 읽습니다.
+
+### 평가
+
+`PYTHONPATH=backend python -m app.radio.evaluate data/samples/radio-test-set.json`로 추출 정확도를 계산합니다. 시험지는 합성 문장 초안이며 팀 검토 전입니다.
+
+시험지의 고유 지명 문항은 `--gazetteer`로 구역명 사전을 주면 위치 확정까지 포함해 잽니다(`--grid`, `--reference`도 받습니다). 사전 없이는 틀립니다. 예시 사전에는 시험지의 지명이 들어 있어 메커니즘 확인용이며, 정확도 평가에는 쓰지 마세요.
+
+#### 무전 반영 전후 비교 (합성 시나리오)
+
+```bash
+PYTHONPATH=backend python -m app.radio.simulate
+PYTHONPATH=backend python -m app.radio.simulate --sweep pod-scale 1.0,0.7,0.5
+PYTHONPATH=backend python -m app.radio.simulate --sweep location-error 0,100,300
+# 실제 Ring 모델 확률로 (격자는 5×5로 합쳐 200×200으로 계산)
+PYTHONPATH=backend python -m app.radio.simulate --grid data/processed/grid.json --prior-npz data/processed/ring.npz --coarsen 5
+```
+
+무전을 반영하지 않을 때, 수색한 영역을 통째로 지울 때, 현재 규칙(확률 보정)으로 반영할 때를 같은 실종자 위치와 같은 난수로 비교합니다.
+지도가 정확하고 실종자가 지도 분포에서 나온다고 가정한 합성 시나리오이므로 현장 성능의 증거가 아닙니다.
+`--grid`와 `--prior-npz`로 실제 확률 격자(예: Ring 모델 결과)를 지정할 수 있고, 큰 격자는 `--coarsen 5`처럼 셀을 합쳐 계산량을 줄입니다(확률 합 보존). 격자·확률 파일의 SHA-256이 출력에 기록됩니다. Ring 결과는 위의 `ring_model.py` 명령으로 먼저 만듭니다.
+
+### 음성 변환 확인 (`soniox_probe.py`)
+
+녹음한 무전 문장을 Soniox 비동기 API로 변환해 출력 형식과 추출 결과를 점검하는 개발 도구입니다. 운영 코드가 아니며 화면·서버 연동은 후속 범위입니다.
+
+```bash
+export SONIOX_API_KEY="발급받은 키"
+PYTHONPATH=backend python -m app.radio.soniox_probe data/raw/radio-record \
+  --script data/samples/radio-record-script.tsv \
+  --gazetteer data/samples/radio-gazetteer-example.json \
+  --out data/processed/soniox-probe.json
+```
+
+- 녹음 파일은 `s01.m4a`처럼 `data/samples/radio-record-script.tsv`의 번호와 같은 이름으로 `data/raw/radio-record/`에 둡니다. `data/raw`와 `data/processed`는 저장소에 포함되지 않으므로 목소리 파일과 결과는 커밋되지 않습니다.
+- API 키는 환경 변수로만 읽고 결과 파일에 남기지 않습니다. 녹음 파일의 SHA-256을 결과에 기록하며, 같은 `--out`으로 다시 실행했을 때 파일이 바뀌어 있으면 중단합니다.
+- `--gazetteer`는 구역명 사전의 이름과 별칭을 Soniox 용어(`context.terms`)로 보냅니다. `--baseline`은 이전 결과와 달라진 문장만 보여 줍니다.
+- 변환이 끝나면 Soniox에 올린 파일과 변환 결과를 지웁니다(`--keep`으로 유지).
+- 네트워크 없이 문장만 점검: `PYTHONPATH=backend python -m app.radio.soniox_probe --analyze-text "여기서 북쪽 200 m 수색 완료"`
 
 ### 테스트
 

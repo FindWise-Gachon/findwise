@@ -7,7 +7,7 @@ import unittest
 import numpy as np
 
 from app.radio.schema import Confidence, EventType, FieldEvent, Location, RadioReport, Status
-from app.radio.update_map import GridSpec, apply_event, new_state, top_zones
+from app.radio.update_map import ClueParams, GridSpec, apply_event, new_state, top_zones
 
 SMALL = GridSpec(x0=0, y0=1000, cell_m=10, rows=100, cols=100)  # 1km × 1km
 # 테스트용 예시. frontend/src/map/config.ts의 개발 격자와 같은 값 (실제 분석에서는 격자 JSON을 읽는다)
@@ -48,6 +48,37 @@ class UpdateMapTest(unittest.TestCase):
         r, c = int((1000 - 750) // 10), int(250 // 10)
         self.assertGreater(s2.prob[r, c], s.prob[r, c])
         self.assertAlmostEqual(float(s2.prob.sum()), 1.0, places=9)
+
+    def test_clue_raises_zero_probability_cells(self):
+        # ABM 결과처럼 대부분의 셀이 0이어도 흔적 주변은 올라가야 한다 (곱셈 방식의 한계)
+        prob = np.zeros((100, 100))
+        prob[10, 10] = 1.0
+        s = new_state(prob)
+        s2 = apply_event(s, ev("e4z", EventType.CLUE, 250, 750), SMALL)
+        r, c = int((1000 - 750) // 10), int(250 // 10)
+        self.assertEqual(s.prob[r, c], 0.0)
+        self.assertGreater(s2.prob[r, c], 0.0)
+        self.assertAlmostEqual(float(s2.prob.sum()), 1.0, places=9)
+        # 기존 확률은 (1 - weight) 이상 남는다 (가우시안 범위 안이면 조금 더 받는다)
+        self.assertGreaterEqual(float(s2.prob[10, 10]), 1.0 - ClueParams().weight)
+
+    def test_clue_moves_weight_fraction_of_mass(self):
+        s = new_state(np.ones((100, 100)))
+        s2 = apply_event(s, ev("e4w", EventType.CLUE, 500, 500), SMALL, clue=ClueParams(sigma_m=1e9, weight=0.5))
+        # 영향 반경이 매우 크면 가우시안은 균등해져 격자 전체가 그대로여야 한다
+        self.assertTrue(np.allclose(s2.prob, s.prob))
+
+    def test_clue_far_outside_grid_is_log_only(self):
+        s = new_state(np.ones((100, 100)))
+        s2 = apply_event(s, ev("e4f", EventType.CLUE, 1e7, 1e7), SMALL)
+        self.assertTrue(np.array_equal(s2.prob, s.prob))
+        self.assertFalse(s2.log[-1]["applied"])
+
+    def test_clue_params_validated(self):
+        s = new_state(np.ones((100, 100)))
+        for bad in (ClueParams(weight=0), ClueParams(weight=1.5), ClueParams(sigma_m=0)):
+            with self.assertRaises(ValueError):
+                apply_event(s, ev("e4p", EventType.CLUE, 500, 500), SMALL, clue=bad)
 
     def test_blocked_keeps_prob_adds_marker(self):
         s = new_state(np.ones((100, 100)))

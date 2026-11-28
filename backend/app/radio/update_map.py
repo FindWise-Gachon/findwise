@@ -2,7 +2,7 @@
 
 규칙 (명세서 4장)
   - 수색 완료 : 영역 셀 × (1 − POD)  → 0으로 만들지 않는다 (POD 상한 0.95)
-  - 흔적 발견 : 발견 지점 주변 셀 가중치 증가
+  - 흔적 발견 : 확률 일부(weight)를 발견 지점 주변 가우시안으로 옮긴다 (기존 확률이 0인 셀도 올라간다)
   - 진입 불가 / 위험 요소 : 확률은 유지하고 표식만 추가
   - 확률이 바뀐 뒤에는 정규화 (격자 전체 합 = 1)
   - 승인되지 않은 이벤트는 반영하지 않고, 같은 이벤트의 중복 반영은 막는다
@@ -35,7 +35,7 @@ POD_MAX = 0.95  # 수색해도 지나쳤을 수 있으므로 0으로 만들지 �
 @dataclass(frozen=True)
 class ClueParams:
     sigma_m: float = 300.0  # 흔적 주변 영향 반경(가우시안 표준편차, m)
-    gain: float = 3.0       # 발견 지점에서의 증가 배율 (중심 셀은 1+gain 배)
+    weight: float = 0.3     # 전체 확률 중 발견 지점 주변으로 옮길 비율 (0 < weight <= 1)
 
 
 @dataclass(frozen=True)
@@ -170,9 +170,16 @@ def apply_event(
     elif event.type == EventType.CLUE:
         if not loc.resolved:
             return _skip(state, event, "위치 불명(좌표 없음)")
+        if not clue.sigma_m > 0 or not 0 < clue.weight <= 1:
+            raise ValueError("흔적 파라미터는 sigma_m > 0, 0 < weight <= 1 이어야 합니다")
         X, Y = grid.centers()
         d2 = (X - loc.x) ** 2 + (Y - loc.y) ** 2
-        prob *= 1.0 + clue.gain * np.exp(-d2 / (2.0 * clue.sigma_m ** 2))
+        bump = np.exp(-d2 / (2.0 * clue.sigma_m ** 2))
+        total = float(bump.sum())
+        if total <= 0:
+            return _skip(state, event, "흔적 위치가 격자 밖이거나 영향 범위가 없음")
+        # 곱셈이 아니라 혼합이다. 곱하면 ABM처럼 확률이 0인 셀은 흔적이 나와도 0으로 남는다.
+        prob = (1.0 - clue.weight) * prob + clue.weight * (bump / total)
 
     elif event.type in (EventType.BLOCKED, EventType.HAZARD):
         if not loc.resolved:
