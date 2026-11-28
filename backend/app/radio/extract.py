@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-from .locate import Gazetteer, parse_relative, resolve_relative
+from .locate import Gazetteer, Place, parse_relative, resolve_from_place, resolve_relative
 from .schema import Confidence, EventType, FieldEvent, Location, RadioReport, Status
 from .update_map import GridSpec
 
@@ -118,6 +118,7 @@ def locate_sentence(sentence: str, gazetteer: Optional[Gazetteer] = None,
 
     우선순위: 구역명 사전의 지명 > '여기서 북쪽 200m' 같은 상대 위치 > 방향+지형 단어.
     기준을 말하지 않은 상대 위치("동쪽 계곡에서 북쪽 200m")는 어디서부터인지 알 수 없어 계산하지 않는다.
+    다만 사전의 지명 뒤에 "에서/부터/기준"이 붙으면("두 번째 갈림길에서 북쪽 200m") 그 지명 좌표에서 계산한다.
     """
     warnings: list[str] = []
     place = None
@@ -135,8 +136,36 @@ def locate_sentence(sentence: str, gazetteer: Optional[Gazetteer] = None,
         location, relative_warnings = resolve_relative(sentence, reference_xy, grid=grid)
         warnings += relative_warnings
         return (location if location is not None else Location(kind="상대위치", value=relative.text)), warnings
+    # 사전의 지명 바로 뒤에 "에서/부터/기준"이 붙은 상대 위치("두 번째 갈림길에서 북쪽 200m")는 그 지명 좌표에서 계산한다
+    anchor = _anchor_place(sentence[:start], gazetteer, sentence)
+    if anchor is not None:
+        location, anchor_warnings = resolve_from_place(sentence, anchor, grid=grid)
+        warnings += anchor_warnings
+        if location is not None:
+            return location, warnings
+        return Location(kind="상대위치", value=f"{anchor.name}에서 {relative.text}"), warnings
     warnings.append(f"'{relative.text}'는 기준 지점이 불분명해 계산하지 않았습니다. 지도에서 위치를 지정해 주세요")
     return landmark, warnings
+
+
+_ANCHOR_SUFFIXES = ("에서부터", "으로부터", "에서", "서부터", "부터", "기준으로", "기준에서", "기준")
+
+
+def _anchor_place(prefix: str, gazetteer: Optional[Gazetteer], sentence: str) -> Optional[Place]:
+    """prefix(상대 위치 표현 앞부분)가 사전 지명 + 기준 조사로 끝나면 그 지명을 돌려준다.
+    문장에 사전 지명이 정확히 하나일 때만 인정한다(여럿이면 어느 것이 기준인지 알 수 없다)."""
+    if gazetteer is None:
+        return None
+    found = gazetteer.find(sentence)
+    if len(found) != 1:
+        return None
+    place, _ = found[0]
+    compact = re.sub(r"\s+", "", prefix).lower()
+    for name in (place.name, *place.aliases):
+        key = re.sub(r"\s+", "", name).lower()
+        if any(compact.endswith(key + suffix) for suffix in _ANCHOR_SUFFIXES):
+            return place
+    return None
 
 
 def find_confidence(sentence: str) -> Confidence:

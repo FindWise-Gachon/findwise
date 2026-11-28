@@ -297,5 +297,67 @@ class RuleImprovementTest(unittest.TestCase):
         self.assertEqual(find_location("제 2 구간 진입 불가").value, "제 2 구간")
 
 
+class PlaceAnchoredRelativeTest(unittest.TestCase):
+    """"두 번째 갈림길에서 북쪽 200m"처럼 사전 지명을 기준으로 한 상대 위치."""
+
+    GRID = GridSpec(x0=269000.0, y0=4183000.0, cell_m=30.0, rows=100, cols=100, crs="EPSG:32611")  # 3 km 격자
+    GAZ = Gazetteer.from_dict({"places": [
+        {"name": "두 번째 갈림길", "aliases": ["2번 갈림길"], "x": 270000, "y": 4182000, "radius_m": 150},
+        {"name": "동쪽 주차장", "x": 271800, "y": 4181000}]})
+
+    def loc(self, text, grid=None):
+        result = extract_report(text, "r", gazetteer=self.GAZ, grid=grid)
+        return result.report.events[0].location, result.warnings
+
+    def test_computed_from_place_coordinates(self):
+        location, warnings = self.loc("두 번째 갈림길에서 북쪽 200m 수색 완료", self.GRID)
+        self.assertEqual((location.kind, location.x, location.y), ("상대위치", 270000.0, 4182200.0))
+        self.assertEqual(location.value, "두 번째 갈림길에서 북쪽 200m")
+        self.assertEqual(warnings, ())
+
+    def test_alias_and_other_connectives(self):
+        for text, expect_x in (("2번 갈림길 기준 동쪽 300미터 수색 완료", 270300.0),
+                               ("두 번째 갈림길부터 동쪽 300 m 진입 불가", 270300.0),
+                               ("두 번째 갈림길 에서 동쪽 300m 수색 완료", 270300.0)):
+            with self.subTest(text=text):
+                location, _ = self.loc(text)
+                self.assertAlmostEqual(location.x, expect_x)
+                self.assertAlmostEqual(location.y, 4182000.0)
+
+    def test_without_connective_it_is_not_computed(self):
+        location, warnings = self.loc("두 번째 갈림길 근처 북쪽 200m 수색 완료")
+        self.assertEqual((location.kind, location.value), ("지명", "두 번째 갈림길"))
+        self.assertEqual((location.x, location.y), (270000.0, 4182000.0))  # 지명 자체의 위치만 쓴다
+        self.assertTrue(any("기준 지점이 불분명" in w for w in warnings))
+
+    def test_two_places_means_no_guess(self):
+        location, warnings = self.loc("두 번째 갈림길에서 동쪽 주차장 쪽 북쪽 200m 수색 완료")
+        self.assertFalse(location.resolved)
+        self.assertTrue(any("여러 개" in w for w in warnings))
+
+    def test_without_gazetteer_is_still_not_computed(self):
+        result = extract_report("동쪽 계곡에서 북쪽 200m 수색 완료", "r")
+        location = result.report.events[0].location
+        self.assertFalse(location.resolved)
+        self.assertTrue(any("기준 지점이 불분명" in w for w in result.warnings))
+
+    def test_result_outside_grid_is_dropped_with_warning(self):
+        location, warnings = self.loc("두 번째 갈림길에서 북쪽 2km 수색 완료", self.GRID)  # y=4184000, 격자 위쪽 밖
+        self.assertFalse(location.resolved)
+        self.assertEqual(location.value, "두 번째 갈림길에서 북쪽 2km")
+        self.assertTrue(any("격자 밖" in w for w in warnings))
+
+    def test_distance_out_of_range_is_dropped_with_warning(self):
+        location, warnings = self.loc("두 번째 갈림길에서 북쪽 8km 수색 완료")
+        self.assertFalse(location.resolved)
+        self.assertTrue(any("범위를 벗어났습니다" in w for w in warnings))
+
+    def test_reporter_reference_still_wins(self):
+        result = extract_report("두 번째 갈림길 쪽에서 여기서 북쪽 200m 수색 완료", "r", gazetteer=self.GAZ,
+                                reference_xy=(271000.0, 4181000.0))
+        location = result.report.events[0].location
+        self.assertEqual((location.x, location.y), (271000.0, 4181200.0))
+
+
 if __name__ == "__main__":
     unittest.main()

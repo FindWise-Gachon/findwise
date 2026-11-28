@@ -7,7 +7,7 @@ import math
 import unittest
 from pathlib import Path
 
-from app.radio.locate import Gazetteer, offset_point, parse_relative, resolve_relative
+from app.radio.locate import Gazetteer, Place, offset_point, parse_relative, resolve_from_place, resolve_relative
 from app.radio.update_map import GridSpec
 
 # 테스트용 예시. frontend/src/map/config.ts의 개발 격자와 같은 값 (6 km × 6 km)
@@ -173,6 +173,34 @@ class GazetteerTest(unittest.TestCase):
         self.assertEqual((location.x, location.y, location.radius_m), (270000.0, 4182000.0, 150.0))
         location, _ = gazetteer.resolve("동쪽 주차장 진입 불가")
         self.assertIsNone(location.radius_m)
+
+
+class ResolveFromPlaceTest(unittest.TestCase):
+    PLACE = Place(name="두 번째 갈림길", x=270000.0, y=4182000.0, radius_m=150.0)
+
+    def test_offsets_from_place(self):
+        location, warnings = resolve_from_place("두 번째 갈림길에서 동쪽 300m", self.PLACE, grid=DEV_GRID)
+        self.assertEqual((location.x, location.y), (270300.0, 4182000.0))
+        self.assertEqual(location.value, "두 번째 갈림길에서 동쪽 300m")
+        self.assertIsNone(location.radius_m)  # 지명의 반경을 수색 반경으로 넘겨받지 않는다
+        self.assertEqual(warnings, [])
+
+    def test_diagonal_and_distance_first(self):
+        location, _ = resolve_from_place("갈림길에서 500m 북동쪽", self.PLACE)
+        self.assertAlmostEqual(location.x, 270000 + 500 * math.sin(math.radians(45)))
+        self.assertAlmostEqual(location.y, 4182000 + 500 * math.cos(math.radians(45)))
+
+    def test_no_relative_expression(self):
+        self.assertEqual(resolve_from_place("두 번째 갈림길 수색 완료", self.PLACE), (None, []))
+
+    def test_range_and_grid_checks(self):
+        location, warnings = resolve_from_place("갈림길에서 북쪽 6km", self.PLACE)
+        self.assertIsNone(location)
+        self.assertIn("범위를 벗어났습니다", warnings[0])
+        small = GridSpec(x0=269000.0, y0=4183000.0, cell_m=30.0, rows=100, cols=100, crs="EPSG:32611")
+        location, warnings = resolve_from_place("갈림길에서 동쪽 3km", self.PLACE, grid=small)
+        self.assertIsNone(location)
+        self.assertIn("격자 밖", warnings[0])
 
 
 if __name__ == "__main__":

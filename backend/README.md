@@ -194,7 +194,7 @@ result = extract_report("여기서 북쪽 200m 수색 완료", "r1", gazetteer=g
 - 사전은 JSON이며 항목마다 `name`, `aliases`(선택), 좌표(`x`, `y` 또는 `lon`, `lat`), `radius_m`(선택)을 적습니다. `lon`, `lat`는 격자 `crs`가 있을 때 변환합니다. 이름은 공백을 무시하고 비교하며, 겹치는 이름이나 격자 밖 좌표는 읽을 때 오류입니다.
 - 한 문장에 지명이 둘 이상이면 추측하지 않고 경고만 돌려줍니다.
 - 상대 위치는 기준 좌표가 없으면 계산하지 않습니다. 기준을 말하지 않은 표현("북쪽 200m")은 보고 대원 위치로 가정한다는 경고를 붙입니다. 거리가 0 이하이거나 5 km를 넘으면 반영하지 않습니다. 숫자는 아라비아 숫자만 읽습니다. Soniox 변환 결과는 "200 m", "1.5 km"처럼 숫자와 단위 사이가 띄어져 나오는데 그대로 읽습니다. 소수점이 있는 거리도 한 문장으로 처리합니다.
-- `extract_report`는 기준을 말하지 않은 상대 위치가 다른 지명과 함께 나오면("동쪽 계곡에서 북쪽 200m") 기준이 불분명해 계산하지 않고 경고합니다.
+- `extract_report`는 사전 지명 뒤에 "에서/부터/기준"이 붙은 상대 위치("두 번째 갈림길에서 북쪽 200m")를 그 지명의 좌표에서 계산합니다. 조사 없이 지명과 함께 나온 상대 위치("동쪽 계곡 근처 북쪽 200m")나 지명이 둘 이상인 경우는 기준이 불분명해 계산하지 않고 경고합니다.
 - `data/samples/radio-gazetteer-example.json`의 좌표는 임의 값이며 실제 지명의 위치가 아닙니다.
 - 명령줄: `PYTHONPATH=backend python -m app.radio.locate "여기서 북쪽 200m" --reference 270000 4182000`
 
@@ -216,11 +216,13 @@ result = extract_report("여기서 북쪽 200m 수색 완료", "r1", gazetteer=g
 PYTHONPATH=backend python -m app.radio.simulate
 PYTHONPATH=backend python -m app.radio.simulate --sweep pod-scale 1.0,0.7,0.5
 PYTHONPATH=backend python -m app.radio.simulate --sweep location-error 0,100,300
+# 실제 Ring 모델 확률로 (격자는 5×5로 합쳐 200×200으로 계산)
+PYTHONPATH=backend python -m app.radio.simulate --grid data/processed/grid.json --prior-npz data/processed/ring.npz --coarsen 5
 ```
 
 무전을 반영하지 않을 때, 수색한 영역을 통째로 지울 때, 현재 규칙(확률 보정)으로 반영할 때를 같은 실종자 위치와 같은 난수로 비교합니다.
 지도가 정확하고 실종자가 지도 분포에서 나온다고 가정한 합성 시나리오이므로 현장 성능의 증거가 아닙니다.
-`--prior-npz`로 외부 확률 파일을 쓰면 파일의 SHA-256을 출력에 함께 기록합니다.
+`--grid`와 `--prior-npz`로 실제 확률 격자(예: Ring 모델 결과)를 지정할 수 있고, 큰 격자는 `--coarsen 5`처럼 셀을 합쳐 계산량을 줄입니다(확률 합 보존). 격자·확률 파일의 SHA-256이 출력에 기록됩니다. Ring 결과는 위의 `ring_model.py` 명령으로 먼저 만듭니다.
 
 ### 음성 변환 확인 (`soniox_probe.py`)
 

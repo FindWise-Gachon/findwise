@@ -8,7 +8,7 @@ import numpy as np
 
 from app.radio.schema import Confidence, EventType, FieldEvent, Location, Status
 from app.radio.simulate import (
-    SimConfig, area_fraction, default_grid, exclude_circle, format_report, gaussian_prior,
+    SimConfig, area_fraction, coarsen, default_grid, exclude_circle, format_report, gaussian_prior,
     load_prior_npz, paired_difference, run, run_budget, run_sequential, sweep, wilson,
 )
 from app.radio.update_map import POD_BY_CONFIDENCE, GridSpec, apply_event, new_state
@@ -174,6 +174,32 @@ class ReportTests(unittest.TestCase):
         self.assertAlmostEqual(rows[1]["config"]["pod_scale"], 0.5)
         with self.assertRaises(ValueError):
             sweep(cfg, SMALL, small_prior(), "unknown", [1.0])
+
+
+class CoarsenTests(unittest.TestCase):
+    def test_mass_is_preserved_and_grid_scaled(self):
+        prior = small_prior()
+        grid, merged = coarsen(SMALL, prior, 5)
+        self.assertEqual(merged.shape, (20, 20))
+        self.assertEqual((grid.rows, grid.cols, grid.cell_m), (20, 20, 150.0))
+        self.assertEqual((grid.x0, grid.y0), (SMALL.x0, SMALL.y0))
+        self.assertAlmostEqual(float(merged.sum()), 1.0)
+        self.assertAlmostEqual(float(merged[0, 0]), float(prior[:5, :5].sum()))
+        self.assertTrue(grid.grid_id.endswith("-x5"))
+
+    def test_factor_one_is_identity_and_bad_factors_fail(self):
+        prior = small_prior()
+        self.assertIs(coarsen(SMALL, prior, 1)[1], prior)
+        for bad in (0, -2, 3, 1.5, True):  # 100은 3으로 나누어떨어지지 않는다
+            with self.subTest(factor=bad), self.assertRaises(ValueError):
+                coarsen(SMALL, prior, bad)
+        with self.assertRaises(ValueError):
+            coarsen(SMALL, np.full((5, 5), 1 / 25), 5)
+
+    def test_simulation_runs_on_coarsened_grid(self):
+        grid, merged = coarsen(SMALL, small_prior(), 5)
+        res = run(SimConfig(trials=30, steps=2, radius_m=400.0, seed=1), grid, merged)
+        self.assertEqual(res["grid"]["cell_m"], 150.0)
 
 
 if __name__ == "__main__":

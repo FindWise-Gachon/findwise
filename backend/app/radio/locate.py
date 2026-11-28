@@ -102,6 +102,26 @@ def resolve_relative(text: str, reference_xy: Optional[tuple[float, float]], *,
     return Location(kind="상대위치", value=offset.text, x=x, y=y, radius_m=radius_m), warnings
 
 
+def resolve_from_place(text: str, place: "Place", *, grid: Optional[GridSpec] = None,
+                       radius_m: Optional[float] = None,
+                       max_distance_m: float = DEFAULT_MAX_DISTANCE_M) -> Resolved:
+    """'두 번째 갈림길에서 북쪽 200m'를 지명(place)의 중심 좌표에서 옮긴 Location으로 바꾼다.
+
+    resolve_relative와 같은 방향·거리 규칙을 쓰되 기준이 보고 대원이 아니라 사전의 지명이다.
+    거리가 범위를 벗어나거나 결과가 격자 밖이면 (None, 경고)를 돌려준다.
+    """
+    offset = parse_relative(text)
+    if offset is None:
+        return None, []
+    if not 0 < offset.distance_m <= max_distance_m:
+        return None, [f"상대 위치의 거리가 범위를 벗어났습니다: '{offset.text}' (0 초과 {max_distance_m:g} m 이하만 처리)"]
+    x, y = offset_point(place.x, place.y, offset.direction, offset.distance_m)
+    label = f"{place.name}에서 {offset.text}"
+    if grid is not None and not _inside(grid, x, y):
+        return None, [f"'{label}'로 계산한 위치가 분석 격자 밖입니다"]
+    return Location(kind="상대위치", value=label, x=x, y=y, radius_m=radius_m), []
+
+
 def _inside(grid: GridSpec, x: float, y: float) -> bool:
     return (grid.x0 <= x < grid.x0 + grid.cols * grid.cell_m and
             grid.y0 - grid.rows * grid.cell_m < y <= grid.y0)

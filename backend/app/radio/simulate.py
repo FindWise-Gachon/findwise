@@ -24,7 +24,7 @@
 실행 (저장소 루트):
     PYTHONPATH=backend python -m app.radio.simulate
     PYTHONPATH=backend python -m app.radio.simulate --sweep pod-scale 1.0,0.7,0.5
-    PYTHONPATH=backend python -m app.radio.simulate --grid data/processed/grid.json --prior-npz data/processed/ring.npz --trials 100
+    PYTHONPATH=backend python -m app.radio.simulate --grid data/processed/grid.json --prior-npz data/processed/ring.npz --coarsen 5
 """
 from __future__ import annotations
 
@@ -102,6 +102,24 @@ def load_prior_npz(path, grid: GridSpec) -> np.ndarray:
     if not np.isfinite(prob).all() or (prob < 0).any() or not math.isclose(float(prob.sum()), 1.0, abs_tol=1e-6):
         raise ValueError("probability는 유한하고 0 이상이며 합이 1이어야 합니다")
     return prob
+
+
+def coarsen(grid: GridSpec, prior: np.ndarray, factor: int) -> tuple[GridSpec, np.ndarray]:
+    """factor × factor 셀을 한 셀로 합쳐 격자를 거칠게 만든다(확률은 합산하므로 합이 보존된다).
+    1000×1000 격자는 시행마다 계산이 무거우니 5배로 합치면 200×200이 된다. 행·열이 factor로 나누어떨어져야 한다."""
+    if isinstance(factor, bool) or not isinstance(factor, int) or factor < 1:
+        raise ValueError("coarsen 배율은 1 이상의 정수여야 합니다")
+    if prior.shape != grid.shape:
+        raise ValueError(f"확률 격자 {prior.shape}와 격자 정의 {grid.shape}가 다릅니다")
+    if factor == 1:
+        return grid, prior
+    if grid.rows % factor or grid.cols % factor:
+        raise ValueError(f"격자 {grid.rows}×{grid.cols}를 {factor}로 나눌 수 없습니다")
+    rows, cols = grid.rows // factor, grid.cols // factor
+    merged = prior.reshape(rows, factor, cols, factor).sum(axis=(1, 3))
+    coarse = GridSpec(x0=grid.x0, y0=grid.y0, cell_m=grid.cell_m * factor, rows=rows, cols=cols,
+                      crs=grid.crs, grid_id=f"{grid.grid_id}-x{factor}" if grid.grid_id else f"x{factor}")
+    return coarse, merged / merged.sum()
 
 
 # ---- 지휘소가 지도를 고치는 세 가지 방식 -------------------------------------
@@ -311,19 +329,27 @@ def main(argv: Optional[list[str]] = None) -> None:
     parser.add_argument("--prior-sigma", type=float, default=600.0, help="기본 사전 확률의 퍼짐(m)")
     parser.add_argument("--grid", help="격자 JSON (없으면 합성 6 km 격자)")
     parser.add_argument("--prior-npz", help="probability 배열이 든 NPZ (예: Ring 모델 결과). --grid와 같은 격자여야 함")
+    parser.add_argument("--coarsen", type=int, default=1, metavar="N",
+                        help="격자를 N×N 셀씩 합쳐 거칠게 만든다(실제 1000×1000 격자는 5를 권장). 확률 합은 보존")
     parser.add_argument("--sweep", nargs=2, metavar=("KEY", "VALUES"), help="예: pod-scale 1.0,0.7,0.5")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
     grid = GridSpec.from_json_file(args.grid) if args.grid else default_grid()
-    header_parts = [f"격자 {grid.grid_id or '(이름 없음)'} {grid.rows}×{grid.cols}, 셀 {grid.cell_m:g} m"]
+    header_parts = []
+    if args.grid:
+        header_parts.append(f"격자 파일 {args.grid} (SHA-256 {hashlib.sha256(Path(args.grid).read_bytes()).hexdigest()})")
     if args.prior_npz:
         prior = load_prior_npz(args.prior_npz, grid)
-        digest = hashlib.sha256(Path(args.prior_npz).read_bytes()).hexdigest()
-        header_parts.append(f"사전 확률 {args.prior_npz} (SHA-256 {digest})")
+        header_parts.append(f"사전 확률 {args.prior_npz} (SHA-256 {hashlib.sha256(Path(args.prior_npz).read_bytes()).hexdigest()})")
     else:
         prior = gaussian_prior(grid, sigma_m=args.prior_sigma)
         header_parts.append(f"사전 확률: 격자 중심 가우시안 σ {args.prior_sigma:g} m")
+    try:
+        grid, prior = coarsen(grid, prior, args.coarsen)
+    except ValueError as exc:
+        parser.error(str(exc))
+    header_parts.insert(0, f"격자 {grid.grid_id or '(이름 없음)'} {grid.rows}×{grid.cols}, 셀 {grid.cell_m:g} m")
     cfg = SimConfig(trials=args.trials, steps=args.steps, radius_m=args.radius,
                     confidence=Confidence(args.confidence), pod_scale=args.pod_scale,
                     location_error_m=args.location_error, seed=args.seed)
