@@ -212,5 +212,90 @@ class ExtractLocateTest(unittest.TestCase):
         self.assertIn("error", json.loads(buffer.getvalue()))
 
 
+class DecimalSentenceTest(unittest.TestCase):
+    """STT가 "1.5 km"처럼 소수점이 있는 거리를 돌려줘도 문장이 쪼개지지 않아야 한다 (Soniox 실측에서 발견)."""
+
+    def test_decimal_distance_is_not_split(self):
+        result, events = one("여기서 북동쪽 1.5 km 지점 수색 완료.")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].type, EventType.SEARCHED)
+        self.assertEqual(events[0].location.value, "여기서 북동쪽 1.5 km")
+        # 문장이 쪼개져 생기는 경고는 없고, 기준 좌표가 없다는 경고만 남는다
+        self.assertEqual(len(result.warnings), 1)
+        self.assertIn("기준 위치", result.warnings[0])
+
+    def test_period_between_sentences_still_splits(self):
+        _, events = one("북쪽 능선 수색 완료.남쪽 계곡 진입 불가. 동쪽 숲에서 발자국 발견.")
+        self.assertEqual([e.type for e in events], [EventType.SEARCHED, EventType.BLOCKED, EventType.CLUE])
+
+    def test_number_then_period_then_sentence(self):
+        _, events = one("여기서 북쪽 200m 수색 완료. 2번 갈림길 진입 불가.")
+        self.assertEqual([e.type for e in events], [EventType.SEARCHED, EventType.BLOCKED])
+
+
+class RuleImprovementTest(unittest.TestCase):
+    """실제 Soniox 변환 결과(s19, s20)와 점검에서 드러난 약점에 대한 회귀 테스트.
+    위험한 오분류(진입 불가를 수색 완료로, 미완료를 수색 완료로, '못 찾았다'를 흔적 발견으로)를 막는다."""
+
+    def kinds(self, text):
+        return [e.type for e in one(text)[1]]
+
+    def test_cannot_pass_is_blocked_not_searched(self):
+        for text in ("북쪽 사면은 눈이 많아서 올라갈 수가 없습니다.",   # 실제 STT 결과(s20)
+                     "서쪽 개울 물이 많아 들어갈 수 없어요.",
+                     "동쪽 임도는 진입이 안 돼요.",
+                     "남쪽 계곡 길이 막혀 있습니다.",
+                     "북쪽 능선 길이 끊겨서 통과가 안 됩니다."):
+            with self.subTest(text=text):
+                self.assertEqual(self.kinds(text), [EventType.BLOCKED])
+
+    def test_passable_or_unblocked_stays_log_only(self):
+        for text in ("남쪽 임도 진입 가능합니다.", "동쪽 능선 길은 막히지 않았습니다."):
+            with self.subTest(text=text):
+                self.assertEqual(self.kinds(text), [])
+
+    def test_existing_not_found_still_searched(self):
+        self.assertEqual(self.kinds("북쪽 능선 수색 완료, 아무것도 없습니다."), [EventType.SEARCHED])
+        self.assertEqual(self.kinds("동쪽 숲 흔적을 찾을 수 없습니다."), [EventType.SEARCHED])
+
+    def test_could_not_find_is_not_a_clue(self):
+        for text in ("서쪽 계곡에서 단서를 못 찾았습니다.", "북쪽 숲에서 별다른 것은 발견하지 못했습니다."):
+            with self.subTest(text=text):
+                self.assertEqual(self.kinds(text), [EventType.SEARCHED])
+
+    def test_unfinished_search_is_not_searched(self):
+        self.assertEqual(self.kinds("서쪽 능선 수색은 아직 안 끝났습니다."), [])
+        self.assertEqual(self.kinds("남쪽 사면 수색이 끝나지 않았습니다."), [])
+        self.assertEqual(self.kinds("수색 중입니다."), [])
+
+    def test_hazard_during_search_is_not_dropped(self):
+        self.assertEqual(self.kinds("수색 중 남쪽 계곡에서 낙석 위험이 있습니다."), [EventType.HAZARD])
+        self.assertEqual(self.kinds("북쪽 능선 낙석 위험, 길도 없습니다."), [EventType.HAZARD])  # 위험을 부정으로 읽지 않는다
+
+    def test_negated_hazard_with_place_word(self):
+        events = one("위험한 곳은 없었고 북쪽 사면 수색 끝냈습니다.")[1]
+        self.assertEqual([e.type for e in events], [EventType.SEARCHED])
+
+    def test_resolved_hazard_is_log_only(self):
+        self.assertEqual(self.kinds("남쪽 계곡 낙석 위험이 해소됐습니다."), [])
+        self.assertEqual(self.kinds("동쪽 임도 통제가 풀렸습니다."), [])
+
+    def test_search_wording_variants(self):
+        for text in ("동쪽 능선 수색 종료합니다. 이상 무.",            # 실제 STT 결과(s19)
+                     "서쪽 사면 수색 마무리했습니다.", "남쪽 계곡 라인 클리어.", "북쪽 숲 한 바퀴 둘러봤습니다."):
+            with self.subTest(text=text):
+                self.assertEqual(self.kinds(text)[:1], [EventType.SEARCHED])
+        self.assertEqual(one("북쪽 능선 꼼꼼하게 다 봤습니다.")[1][0].confidence, Confidence.THOROUGH)
+
+    def test_clue_without_the_word_found(self):
+        for text in ("동쪽 계곡에 장갑이 떨어져 있습니다.", "남쪽 능선에 발자국이 보입니다."):
+            with self.subTest(text=text):
+                self.assertEqual(self.kinds(text), [EventType.CLUE])
+
+    def test_numbered_zone_location(self):
+        self.assertEqual(find_location("3구역 수색 완료").value, "3구역")
+        self.assertEqual(find_location("제 2 구간 진입 불가").value, "제 2 구간")
+
+
 if __name__ == "__main__":
     unittest.main()

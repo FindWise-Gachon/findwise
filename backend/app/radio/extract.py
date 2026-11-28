@@ -36,24 +36,37 @@ _DIR = r"(?:북서|북동|남서|남동|동|서|남|북)"
 _FEATURE = r"(?:계곡|능선|사면|등산로|절벽|폭포|정상|봉우리|숲|개울|하천|임도|갈림길|주차장|전망대|바위|암벽)"
 _LOC_FULL = re.compile(rf"{_B}{_DIR}(?:쪽|부)?\s*{_FEATURE}")
 _LOC_DIR = re.compile(rf"{_B}{_DIR}(?:쪽|부)")
+_LOC_ZONE = re.compile(rf"{_B}(?:제\s*)?\d+\s*(?:구역|구간|지구)")  # "3구역" 같은 번호 구역
 _LOC_RELATIVE = re.compile(r"여기|현재\s*위치|제\s*위치|우리\s*위치")
 
 # ---- 유형 규칙 (위에서부터 먼저 맞는 것) ----------------------------------
-_INCOMPLETE = re.compile(r"못\s*갔.*(봤|수색)|미완료|완료\s*아님")
-_HAZARD_NEGATED = re.compile(r"(위험|낙석|붕괴)\S{0,3}\s*(없|아니)")
+_INCOMPLETE = re.compile(r"못\s*갔.*(봤|수색)|미완료|완료\s*아님|안\s*끝|끝나지\s*(?:않|못)|완료되지\s*않|마치지\s*(?:못|않)")
+# 이미 해소된 위험·통제는 새 이벤트가 아니다 (기록만)
+_RESOLVED = re.compile(r"(?:위험|낙석|붕괴|통제|통행|진입)\S{0,4}\s*(?:해제|해소|사라|없어졌|풀렸|치웠|복구)")
+# "위험은 없다", "위험한 곳은 없었고"처럼 위험 바로 뒤에서 부정하는 표현 (곳·지역 같은 말 한 마디만 사이에 허용:
+# 아무 말이나 허용하면 "낙석 위험, 길도 없습니다"의 위험을 놓친다)
+_HAZARD_NEGATED = re.compile(r"(위험|낙석|붕괴)\S{0,3}\s*(?:(?:곳|지역|구간|부분|데|것)\S{0,2}\s*)?(없|아니)")
 _HAZARD = re.compile(r"낙석|위험|붕괴")
-_BLOCKED = re.compile(r"진입\s*불가|접근\s*불가|통행\s*불가|못\s*내려|못\s*갔")
+_BLOCKED = re.compile(
+    r"진입\s*불가|접근\s*불가|통행\s*불가|못\s*내려|못\s*갔"
+    r"|(?:올라갈|건널|건너갈|지나갈|지날|통과할|들어갈|내려갈|넘을|갈|진입할|접근할|통행할)\s*수(?:가)?\s*없"
+    r"|(?:진입|접근|통행|통과)(?:이|가)?\s*안\s*(?:됩|돼|된)|막혀|막혔|막고\s*있|끊겨|끊겼|끊어졌")
 _NOT_FOUND = re.compile(
     r"미발견|아무것도\s*없|흔적\s*없|단서\s*없|없어요|없습니다|없음"
-    r"|발견\s*(?:하지\s*)?못|발견되지\s*않|찾지\s*못|찾을\s*수\s*없")
-_CLUE = re.compile(r"발견|습득|찾았")
-_SEARCHED = re.compile(r"수색.*(?:완료|끝|마쳤)|꼼꼼히.*봤|대충.*훑|확인.*완료|살펴\s*봤|훑어\s*봤")
+    r"|발견\s*(?:하지\s*)?못|발견되지\s*않|찾지\s*못|찾을\s*수\s*없|못\s*(?:찾|발견)")
+_CLUE = re.compile(
+    r"발견|습득|찾았"
+    r"|(?:발자국|자국|신발|장갑|모자|스틱|물병|로프|배낭|옷|흔적).{0,12}(?:보이|보입|있습|있어|떨어져|봤)")
+_SEARCHED = re.compile(
+    r"수색.*(?:완료|끝|마쳤|종료|마무리)|꼼꼼(?:히|하게).*봤|대충.*훑|확인.*완료|살펴\s*봤|훑어\s*봤"
+    r"|둘러\s*봤|둘러봤|다\s*봤|클리어")
 
 # ---- 확인 강도 ---------------------------------------------------------
 _THOROUGH = re.compile(r"꼼꼼|정밀")
 _ROUGH = re.compile(r"대충|훑")
 
-_SENTENCE_SPLIT = re.compile(r"[.!?;\n]+")
+# 소수점("1.5 km")은 문장 끝이 아니다: 숫자 사이의 마침표는 나누지 않는다
+_SENTENCE_SPLIT = re.compile(r"(?:[!?;\n]|\.(?!\d)|(?<!\d)\.)+")
 
 
 @dataclass(frozen=True)
@@ -72,7 +85,7 @@ def classify(sentence: str) -> Optional[tuple[EventType, str]]:
     '위험은 없다'처럼 위험을 부정하는 표현은 위험 요소가 아니며, 같은 표현을 '아무것도 없다(미발견)'로도
     읽지 않도록 그 부분을 뺀 나머지 문장으로 다른 규칙을 판단한다.
     """
-    if _INCOMPLETE.search(sentence):
+    if _INCOMPLETE.search(sentence) or _RESOLVED.search(sentence):
         return None
     negated = _HAZARD_NEGATED.search(sentence)
     if _HAZARD.search(sentence) and not negated:
@@ -91,7 +104,7 @@ def classify(sentence: str) -> Optional[tuple[EventType, str]]:
 
 def find_location(sentence: str) -> Location:
     """문장에서 위치 표현을 찾는다. 좌표는 정하지 않는다(x, y 없음)."""
-    for pattern, kind in ((_LOC_FULL, "지명"), (_LOC_DIR, "지명"), (_LOC_RELATIVE, "상대위치")):
+    for pattern, kind in ((_LOC_FULL, "지명"), (_LOC_DIR, "지명"), (_LOC_ZONE, "지명"), (_LOC_RELATIVE, "상대위치")):
         found = pattern.search(sentence)
         if found:
             return Location(kind=kind, value=re.sub(r"\s+", " ", found.group(0)).strip())

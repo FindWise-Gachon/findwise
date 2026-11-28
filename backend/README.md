@@ -113,6 +113,7 @@ allowed = can_move(access, (row, column), (next_row, next_column), allow_unknown
 | `app/radio/review.py` | 지휘관 승인·수정 후 승인·거절 상태 전이 |
 | `app/radio/history.py` | 추가 전용 이력(해시 체인)과 이력으로 지도 상태 복원 |
 | `app/radio/workflow.py` | 접수 → 승인 처리 → 지도 반영 → 이력 기록을 묶는 함수 |
+| `app/radio/soniox_probe.py` | 녹음 → Soniox 변환 → 추출까지 출력 형식을 점검하는 개발 도구 (운영 연동 아님) |
 
 ### 반영 규칙
 
@@ -192,7 +193,7 @@ result = extract_report("여기서 북쪽 200m 수색 완료", "r1", gazetteer=g
 
 - 사전은 JSON이며 항목마다 `name`, `aliases`(선택), 좌표(`x`, `y` 또는 `lon`, `lat`), `radius_m`(선택)을 적습니다. `lon`, `lat`는 격자 `crs`가 있을 때 변환합니다. 이름은 공백을 무시하고 비교하며, 겹치는 이름이나 격자 밖 좌표는 읽을 때 오류입니다.
 - 한 문장에 지명이 둘 이상이면 추측하지 않고 경고만 돌려줍니다.
-- 상대 위치는 기준 좌표가 없으면 계산하지 않습니다. 기준을 말하지 않은 표현("북쪽 200m")은 보고 대원 위치로 가정한다는 경고를 붙입니다. 거리가 0 이하이거나 5 km를 넘으면 반영하지 않습니다. 숫자는 아라비아 숫자만 읽습니다.
+- 상대 위치는 기준 좌표가 없으면 계산하지 않습니다. 기준을 말하지 않은 표현("북쪽 200m")은 보고 대원 위치로 가정한다는 경고를 붙입니다. 거리가 0 이하이거나 5 km를 넘으면 반영하지 않습니다. 숫자는 아라비아 숫자만 읽습니다. Soniox 변환 결과는 "200 m", "1.5 km"처럼 숫자와 단위 사이가 띄어져 나오는데 그대로 읽습니다. 소수점이 있는 거리도 한 문장으로 처리합니다.
 - `extract_report`는 기준을 말하지 않은 상대 위치가 다른 지명과 함께 나오면("동쪽 계곡에서 북쪽 200m") 기준이 불분명해 계산하지 않고 경고합니다.
 - `data/samples/radio-gazetteer-example.json`의 좌표는 임의 값이며 실제 지명의 위치가 아닙니다.
 - 명령줄: `PYTHONPATH=backend python -m app.radio.locate "여기서 북쪽 200m" --reference 270000 4182000`
@@ -220,6 +221,24 @@ PYTHONPATH=backend python -m app.radio.simulate --sweep location-error 0,100,300
 무전을 반영하지 않을 때, 수색한 영역을 통째로 지울 때, 현재 규칙(확률 보정)으로 반영할 때를 같은 실종자 위치와 같은 난수로 비교합니다.
 지도가 정확하고 실종자가 지도 분포에서 나온다고 가정한 합성 시나리오이므로 현장 성능의 증거가 아닙니다.
 `--prior-npz`로 외부 확률 파일을 쓰면 파일의 SHA-256을 출력에 함께 기록합니다.
+
+### 음성 변환 확인 (`soniox_probe.py`)
+
+녹음한 무전 문장을 Soniox 비동기 API로 변환해 출력 형식과 추출 결과를 점검하는 개발 도구입니다. 운영 코드가 아니며 화면·서버 연동은 후속 범위입니다.
+
+```bash
+export SONIOX_API_KEY="발급받은 키"
+PYTHONPATH=backend python -m app.radio.soniox_probe data/raw/radio-record \
+  --script data/samples/radio-record-script.tsv \
+  --gazetteer data/samples/radio-gazetteer-example.json \
+  --out data/processed/soniox-probe.json
+```
+
+- 녹음 파일은 `s01.m4a`처럼 `data/samples/radio-record-script.tsv`의 번호와 같은 이름으로 `data/raw/radio-record/`에 둡니다. `data/raw`와 `data/processed`는 저장소에 포함되지 않으므로 목소리 파일과 결과는 커밋되지 않습니다.
+- API 키는 환경 변수로만 읽고 결과 파일에 남기지 않습니다. 녹음 파일의 SHA-256을 결과에 기록하며, 같은 `--out`으로 다시 실행했을 때 파일이 바뀌어 있으면 중단합니다.
+- `--gazetteer`는 구역명 사전의 이름과 별칭을 Soniox 용어(`context.terms`)로 보냅니다. `--baseline`은 이전 결과와 달라진 문장만 보여 줍니다.
+- 변환이 끝나면 Soniox에 올린 파일과 변환 결과를 지웁니다(`--keep`으로 유지).
+- 네트워크 없이 문장만 점검: `PYTHONPATH=backend python -m app.radio.soniox_probe --analyze-text "여기서 북쪽 200 m 수색 완료"`
 
 ### 테스트
 
